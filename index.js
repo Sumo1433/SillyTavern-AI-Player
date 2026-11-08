@@ -37,7 +37,7 @@ const DEFAULTS = {
     motion: true,              // анимации интерфейса
     uiTab: 'conn',
     thoughtsMin: false,
-    memory: false,             // записи игрока (память персонажа) — доп. запрос раз в N ходов
+    memory: true,              // записи игрока (память персонажа) — доп. запрос раз в N ходов
     memoryEvery: 3,            // обновлять записи каждые N ходов агента
 };
 const PROFILE_FIELDS = ['provider', 'url', 'model', 'temperature', 'contextSize', 'proxyPassword'];
