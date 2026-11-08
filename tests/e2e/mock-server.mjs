@@ -30,7 +30,7 @@ export function systemText(body) {
 const isPlayerModel = m => m === 'mock-player' || /^claude-/.test(String(m || ''));
 export function classify(body) {
     const sys = systemText(body);
-    if (sys.includes('вне роли')) return 'thought';
+    if (sys.includes('выйди из роли') || sys.includes('вне роли')) return 'thought';
     if (isPlayerModel(body?.model) && sys.includes('Отвечай одним словом')) return 'test';
     if (isPlayerModel(body?.model)) return 'turn';
     return 'bot';

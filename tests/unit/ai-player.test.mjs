@@ -304,7 +304,8 @@ test('7. MESSAGE_RECEIVED после хода агента → «мысль» в
     assert.equal(rc.length, 1);
     const b = rc[0].body;
     assert.equal(b.messages[0].role, 'system');
-    assert.match(b.messages[0].content, /вне роли/);
+    assert.match(b.messages[0].content, /выйди из роли/);
+    assert.doesNotMatch(b.messages[0].content, /Критерии:/);   // мысль участника, а не диагностика
     assert.match(b.messages[0].content, /«Боб»/);
     assert.match(b.messages[1].content, /\[ТЫ\] Боб: \*кивает\*/);
     assert.match(b.messages[1].content, /Держи эль/);

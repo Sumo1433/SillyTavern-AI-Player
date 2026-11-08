@@ -803,7 +803,7 @@ try {
             for (const s of [KEY, KEY2, TAVERN_KEY, PROXY_PASS]) if (q.raw.includes(s)) problems.push(`${q.kind}: секрет в теле`);
         }
         if (turn && !systemText({ system: turn.body.system }).includes('Ты — живой игрок')) problems.push('ход: system не системный промпт агента');
-        if (thought && !systemText({ system: thought.body.system }).includes('вне роли')) problems.push('мысль: system не промпт «мыслей»');
+        if (thought && !systemText({ system: thought.body.system }).includes('выйди из роли')) problems.push('мысль: system не промпт «мыслей»');
         if (r.badge !== `🤖 ${CLAUDE_MODEL}`) problems.push(`бейдж: ${r.badge}`);
         if (r.aip?.provider && r.aip.provider !== 'claude_proxy') problems.push(`extra.aip.provider=${r.aip.provider}`);
         if (r.last !== CLAUDE_MODEL) problems.push(`aip_log.playerModel=${r.last}`);

@@ -95,7 +95,7 @@ export const isGenerate = c => c.url.endsWith('/api/backends/chat-completions/ge
 const sysOf = c => String(c.body?.messages?.[0]?.content || '');
 const lastOf = c => String(c.body?.messages?.at?.(-1)?.content || '');
 export const isTestCall = c => isGenerate(c) && sysOf(c).startsWith('Отвечай одним словом');
-export const isReactionCall = c => isGenerate(c) && !isTestCall(c) && /Дай вывод о последнем ответе/.test(lastOf(c));
+export const isReactionCall = c => isGenerate(c) && !isTestCall(c) && /об игре после ответа «/.test(lastOf(c));
 export const isTurnCall = c => isGenerate(c) && !isReactionCall(c) && !isTestCall(c);
 export const isSecretCall = (c, op) => c.url.endsWith(`/api/secrets/${op}`);
 
