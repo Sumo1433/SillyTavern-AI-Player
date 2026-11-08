@@ -1,0 +1,1 @@
+{"name":"aip-e2e","private":true,"type":"module","scripts":{"test":"node run-e2e.mjs"},"dependencies":{"js-yaml":"^4.1.0","puppeteer-core":"^23.11.1"}}

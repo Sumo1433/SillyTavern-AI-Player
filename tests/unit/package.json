@@ -1,0 +1,12 @@
+{
+  "name": "st-ai-player-unit-tests",
+  "private": true,
+  "type": "module",
+  "description": "Автотесты расширения SillyTavern «AI Player» (jsdom + node:test)",
+  "scripts": {
+    "test": "node --test --test-reporter=spec"
+  },
+  "devDependencies": {
+    "jsdom": "^31.0.0"
+  }
+}
