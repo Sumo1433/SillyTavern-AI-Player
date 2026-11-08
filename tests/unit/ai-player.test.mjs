@@ -387,15 +387,42 @@ test('7f. Перегенерация (сообщение удалено и со�
     const id2 = await regenerate(t, 'Совсем новый ответ после перегенерации');
     assert.equal(id2, id);
     assert.notEqual(t.c.chat[id2].send_date, firstDate);
-    await waitFor(() => t.c.chatMetadata.aip_log.length === 2, { msg: 'мысль на перегенерацию' });
-    assert.equal(t.calls.filter(isReactionCall).length, 2, 'на новый ответ бота должна прийти новая мысль');
-    assert.equal(t.c.chatMetadata.aip_log[1].sendDate, t.c.chat[id2].send_date);
+    // мысль о старом (удалённом) ответе убрана, о новом — появилась
+    await waitFor(() => t.calls.filter(isReactionCall).length === 2 && t.c.chatMetadata.aip_log.length === 1
+        && t.c.chatMetadata.aip_log[0].sendDate === t.c.chat[id2].send_date, { msg: 'мысль на перегенерацию' });
     assert.match(t.calls.filter(isReactionCall)[1].body.messages[1].content, /Совсем новый ответ/);
+    assert.equal(t.$$('#aip_thoughts .aip-th-item').length, 1, 'в окне только мысль о новом ответе');
     // тот же самый ответ ещё раз (повторное событие) — дубля нет
     await t.emit(t.event_types.MESSAGE_RECEIVED, id2, 'regenerate');
     await sleep(30);
     assert.equal(t.calls.filter(isReactionCall).length, 2);
-    assert.equal(t.c.chatMetadata.aip_log.length, 2);
+    assert.equal(t.c.chatMetadata.aip_log.length, 1);
+});
+
+test('7j. Удалили ответ бота — мысль о нём исчезает из лога и окна', async () => {
+    t = setup();
+    await agentTurn(t);
+    await botReply(t, 'Ответ, который удалят');
+    await waitFor(() => t.c.chatMetadata.aip_log?.length === 1);
+    assert.equal(t.$$('#aip_thoughts .aip-th-item').length, 1);
+    t.c.chat.length = t.c.chat.length - 1;                       // «Удалить сообщение» в ST
+    await t.emit(t.event_types.MESSAGE_DELETED, t.c.chat.length);
+    await sleep(10);
+    assert.equal(t.c.chatMetadata.aip_log.length, 0, 'мысль о удалённом сообщении убрана из лога');
+    assert.equal(t.$$('#aip_thoughts .aip-th-item').length, 0, 'и из окна');
+});
+
+test('7k. Мысли другого чата (скопированные с метаданными) не показываются и вычищаются', async () => {
+    t = setup();
+    await agentTurn(t);
+    await botReply(t);
+    await waitFor(() => t.c.chatMetadata.aip_log?.length === 1);
+    // ветка/копия: метаданные с мыслью переехали в чат с другим id
+    t.state.chatId = 'other-chat';
+    await t.emit(t.event_types.CHAT_CHANGED, 'other-chat');
+    await sleep(10);
+    assert.equal(t.$$('#aip_thoughts .aip-th-item').length, 0, 'чужая мысль не показывается');
+    assert.equal(t.c.chatMetadata.aip_log.length, 0, 'и удалена из метаданных этого чата');
 });
 
 for (const type of ['first_message', 'command', 'extension']) {
@@ -776,7 +803,7 @@ test('11b. Экспорт: мысль привязана к сообщению �
     assert.equal(d.turns.find(x => x.index === botId).reactions.length, 0, 'не прилипла к сообщению на старом индексе');
 });
 
-test('11c. [БАГ] Экспорт: после «Продолжить» (continue) ответа бота прежняя мысль теряется', async () => {
+test('11c. После «Продолжить» (continue) мысль о ответе сохраняется (в логе, окне и экспорте)', async () => {
     t = setup();
     await agentTurn(t);
     const botId = await botReply(t);
@@ -787,8 +814,10 @@ test('11c. [БАГ] Экспорт: после «Продолжить» (continu
     const log = t.c.chatMetadata.aip_log;
     const d = await exportJSON(t);
     const exported = d.turns.reduce((a, x) => a + x.reactions.length, 0);
-    assert.equal(exported, log.length,
-        `в aip_log ${log.length} мысл., в экспорте ${exported}: запись с sendDate до continue не совпадает ни с send_date, ни со swipe_info`);
+    assert.equal(log.length, 1, 'мысль не потерялась');
+    assert.equal(exported, 1, `в экспорте ${exported}`);
+    t.aip.renderThoughts();
+    assert.equal(t.$$('#aip_thoughts .aip-th-item').length, 1, 'и в окне после перерисовки');
 });
 
 // ---------------------------------------------------------------- 12

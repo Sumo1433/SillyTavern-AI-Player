@@ -20,7 +20,7 @@ const EXPOSE = `
   get busy() { return busy; },
   get pendingMeta() { return pendingMeta; },
   cleanReply, buildMessages, buildSystemPrompt, getSync, settings, activeProfile,
-  updateCtxMeter, playTurn, openModal, renderPrompt, matchData, setReactions,
+  updateCtxMeter, playTurn, openModal, renderPrompt, matchData, setReactions, renderThoughts,
   PROMPT_DEFAULTS, PLACEHOLDER_LABEL,
 };`;
 
@@ -320,6 +320,7 @@ export function setup(opts = {}) {
         dom, w, doc, c, card, calls, toasts, confirms, logs, counters, state, env, sent, blobs, aip, gate, eventSource, event_types,
         secrets, tick,
         $: sel => doc.querySelector(sel),
+        $$: sel => [...doc.querySelectorAll(sel)],
         s: () => c.extensionSettings.ai_player,
         emit: (ev, ...a) => eventSource.emit(ev, ...a),
         get sendDone() { return sendDone; },

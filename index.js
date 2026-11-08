@@ -6,7 +6,7 @@
 // запущена); все запросы идут через бэкенд ST.
 
 const MODULE = 'ai_player';
-const VERSION = '0.3.1';
+const VERSION = '0.3.2';
 // ID из списка SillyTavern 1.19 + актуальные
 const CLAUDE_MODELS = ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5-5', 'claude-sonnet-5', 'claude-haiku-5-5'];
 const SOURCE = {
@@ -760,7 +760,7 @@ async function onBotMessage(id) {
         const text = String(res.text || '').replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '').trim();
         if (!text) return;
         const entry = {
-            mesId: id, swipeId: m.swipe_id ?? 0, sendDate: m.send_date ?? null, bot: m.name,
+            chatId: id0, mesId: id, swipeId: m.swipe_id ?? 0, sendDate: m.send_date ?? null, bot: m.name,
             playerModel: pm.extra.aip.model, botModel: m.extra?.model || '?', text, ts: Date.now(),
         };
         const meta = ctx().chatMetadata;
@@ -804,8 +804,56 @@ function thoughtNode(e) {
     return item;
 }
 
+// ---------- Актуальность мыслей ----------
+// Мысль живёт, пока существует ответ бота, на который она была: удалили сообщение, перегенерировали
+// ответ или метаданные скопировались в другой чат (ветка/копия) — мысль убирается.
+function chatDates(chat) {
+    const dates = new Set();
+    for (const m of chat || []) { if (m.send_date) dates.add(m.send_date); for (const x of m.swipe_info || []) if (x?.send_date) dates.add(x.send_date); }
+    return dates;
+}
+function thoughtAlive(e, chat, dates, cid) {
+    if (e.chatId && cid && e.chatId !== cid) return false;                 // мысль из другого чата
+    if (e.sendDate != null) return dates.has(e.sendDate);                  // ответ бота ещё существует (дата обновляется при «Продолжить»)
+    // старые записи без даты — по индексу и имени бота
+    const m = chat?.[e.mesId];
+    return !!m && !m.is_user && !m.is_system && (!e.bot || m.name === e.bot);
+}
+// «Продолжить» перезаписывает дату ответа — переносим её в мысли об этом ответе, чтобы они не потерялись
+function retagThoughts(id) {
+    const c = ctx();
+    const m = c.chat?.[id];
+    const log = c.chatMetadata?.aip_log;
+    if (!m || !log?.length) return;
+    const cid = chatId();
+    let changed = false;
+    // не зависим от порядка, в котором ST обновляет send_date и swipe_info: просто переносим текущую дату
+    for (const e of log) {
+        if (e.mesId === id && (!e.chatId || e.chatId === cid) && e.sendDate != null
+            && (e.swipeId ?? 0) === (m.swipe_id ?? 0) && e.sendDate !== m.send_date) { e.sendDate = m.send_date; changed = true; }
+    }
+    if (changed) c.saveMetadata?.();
+}
+function liveThoughts() {
+    const c = ctx();
+    const log = c.chatMetadata?.aip_log || [];
+    const dates = chatDates(c.chat), cid = chatId();
+    return log.filter(e => thoughtAlive(e, c.chat, dates, cid));
+}
+// Удаляет из лога мысли о несуществующих сообщениях; возвращает true, если что-то удалено
+function pruneThoughts() {
+    const c = ctx();
+    const meta = c.chatMetadata;
+    if (!meta?.aip_log?.length || !chatId()) return false;
+    const live = liveThoughts();
+    if (live.length === meta.aip_log.length) return false;
+    meta.aip_log = live;
+    c.saveMetadata?.();
+    return true;
+}
+
 function updateThoughtsCount() {
-    const n = (ctx().chatMetadata?.aip_log || []).length;
+    const n = liveThoughts().length;
     const c = document.querySelector('#aip_thoughts .aip-th-count');
     if (c) c.textContent = n ? String(n) : '';
     document.getElementById('aip_thoughts')?.classList.toggle('aip-empty', !n);
@@ -856,7 +904,8 @@ function scrollThoughtsToEnd() {
 function renderThoughts() {
     const body = document.querySelector('#aip_thoughts .aip-th-body');
     if (!body) return;
-    body.replaceChildren(...(ctx().chatMetadata?.aip_log || []).map(thoughtNode));
+    pruneThoughts();
+    body.replaceChildren(...liveThoughts().map(thoughtNode));
     updateThoughtsCount();
     scrollThoughtsToEnd();
 }
@@ -963,10 +1012,9 @@ function download(name, text, type) {
 function matchData() {
     const c = ctx();
     const { s } = settings();
-    const log = c.chatMetadata?.aip_log || [];
+    const log = liveThoughts();                   // только мысли о существующих сообщениях этого чата
     // даты сообщений в чате: если дата записи уже не встречается (после «Продолжить» ST её перезаписывает) — по индексу
-    const dates = new Set();
-    for (const m of c.chat || []) { if (m.send_date) dates.add(m.send_date); for (const x of m.swipe_info || []) if (x?.send_date) dates.add(x.send_date); }
+    const dates = chatDates(c.chat);
     const turns = (c.chat || []).map((m, i) => ({ m, i })).filter(({ m }) => !m.is_system).map(({ m, i }) => ({
         index: i, side: m.is_user ? (m.extra?.aip ? 'agent' : 'human') : 'bot', name: m.name, time: m.send_date,
         model: m.is_user ? (m.extra?.aip?.model ?? null) : (m.extra?.model ?? null),
@@ -1574,10 +1622,16 @@ function initAll() {
     }
     // мысли — только на настоящие ответы бота: не на приветствие, /sendas и картинки расширений
     c.eventSource.on(ev.MESSAGE_RECEIVED, (id, type) => {
-        // continue/append перезаписывают то же сообщение — повторная платная «мысль» не нужна
-        if (['first_message', 'command', 'extension', 'continue', 'append', 'appendFinal', 'impersonate'].includes(type)) return;
+        // continue/append перезаписывают то же сообщение — повторная платная «мысль» не нужна,
+        // но дату в уже записанных мыслях о нём обновляем
+        if (['continue', 'append', 'appendFinal'].includes(type)) { retagThoughts(id); return; }
+        if (['first_message', 'command', 'extension', 'impersonate'].includes(type)) return;
         onBotMessage(id);
     });
+    // удалили сообщение / перегенерировали ответ / удалили чат — убираем мысли о несуществующих сообщениях
+    for (const name of ['MESSAGE_DELETED', 'CHAT_DELETED', 'GROUP_CHAT_DELETED']) {
+        if (ev[name]) c.eventSource.on(ev[name], () => renderThoughts());
+    }
     if (ev.USER_MESSAGE_RENDERED) c.eventSource.on(ev.USER_MESSAGE_RENDERED, renderBadge);
     if (ev.MORE_MESSAGES_LOADED) c.eventSource.on(ev.MORE_MESSAGES_LOADED, renderAllBadges);
     renderThoughts();
