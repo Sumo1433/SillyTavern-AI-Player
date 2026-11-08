@@ -12,13 +12,22 @@
   --aip-border: var(--SmartThemeBorderColor, rgba(255, 255, 255, .14));
   --aip-accent: var(--SmartThemeQuoteColor, #e18a24);
   --aip-shadow: var(--SmartThemeShadowColor, rgba(0, 0, 0, .5));
-  --aip-surface: color-mix(in srgb, var(--aip-fg) 6%, transparent);
-  --aip-surface-2: color-mix(in srgb, var(--aip-fg) 11%, transparent);
-  --aip-muted: color-mix(in srgb, var(--aip-fg) 62%, transparent);
+  /* запасные значения для старых WebView без color-mix() */
+  --aip-surface: rgba(127, 127, 127, .08);
+  --aip-surface-2: rgba(127, 127, 127, .16);
+  --aip-muted: rgba(160, 160, 160, .95);
   --aip-ok: #5fbf77;
   --aip-warn: #e0a83a;
   --aip-err: #e46a6a;
   --aip-radius: 12px;
+}
+
+@supports (color: color-mix(in srgb, red 50%, transparent)) {
+  :root {
+    --aip-surface: color-mix(in srgb, var(--aip-fg) 6%, transparent);
+    --aip-surface-2: color-mix(in srgb, var(--aip-fg) 11%, transparent);
+    --aip-muted: color-mix(in srgb, var(--aip-fg) 62%, transparent);
+  }
 }
 
 /* ---------- кнопка ▶ в строке ввода ---------- */
@@ -42,7 +51,8 @@
 
 /* ---------- оверлей и окно ---------- */
 #aip_overlay {
-  position: fixed; inset: 0; z-index: 9998;
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%;
+  z-index: 30000;   /* выше панелей и меню ST */
   background: rgba(0, 0, 0, .5);
   display: flex; align-items: center; justify-content: center;
   opacity: 0; visibility: hidden; pointer-events: none;
@@ -174,7 +184,7 @@
 
 /* ---------- окно мыслей ---------- */
 #aip_thoughts {
-  position: fixed; right: 16px; bottom: 90px; z-index: 9997;
+  position: fixed; right: 16px; bottom: 90px; z-index: 29999;
   width: min(380px, 92vw); max-height: 55vh; max-height: 55dvh;
   display: flex; flex-direction: column; overflow: hidden;
   opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(12px);

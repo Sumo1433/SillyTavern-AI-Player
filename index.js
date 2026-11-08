@@ -1061,11 +1061,27 @@ async function refreshSync() {
 }
 
 function openModal() {
-    fillModal();
-    document.getElementById('aip_status').textContent = '';
-    refreshSync();
-    scheduleMeter();
-    document.getElementById('aip_overlay').classList.add('aip-open');
+    let o = document.getElementById('aip_overlay');
+    try {
+        if (!o) { buildModal(); o = document.getElementById('aip_overlay'); }   // кто-то удалил окно — пересобираем
+        document.body.appendChild(o);                                          // поднять поверх элементов, добавленных позже
+    } catch (e) {
+        console.error('[AI Player] окно не создано', e);
+        toastr.error(`AI Player: окно не создано — ${short(e.message)}`);
+        return;
+    }
+    // окно показываем всегда; ошибки заполнения — уведомлением, а не молчаливым отказом
+    o.classList.add('aip-open');
+    const step = (name, fn) => {
+        try { fn(); } catch (e) {
+            console.error(`[AI Player] ${name}`, e);
+            toastr.error(`AI Player (${name}): ${short(e.message)}`);
+        }
+    };
+    step('настройки', fillModal);
+    step('статус', () => { document.getElementById('aip_status').textContent = ''; });
+    step('синхронизация', refreshSync);
+    step('шкала', scheduleMeter);
 }
 function closeModal() { document.getElementById('aip_overlay').classList.remove('aip-open'); }
 
@@ -1089,7 +1105,7 @@ function addButtons() {
             it.id = id; it.tabIndex = 0;
             it.className = 'list-group-item flex-container flexGap5 interactable';
             it.innerHTML = `<i class="fa-solid ${icon}"></i><span>${text}</span>`;   // статичный текст
-            it.addEventListener('click', fn);
+            it.addEventListener('click', e => { e.stopPropagation(); fn(); });
             return it;
         };
         menu.append(
@@ -1126,7 +1142,7 @@ jQuery(() => {
     if (ev.MORE_MESSAGES_LOADED) c.eventSource.on(ev.MORE_MESSAGES_LOADED, renderAllBadges);
     renderThoughts();
     renderAllBadges();
-    console.log('[AI Player] 0.2.0 загружен');
+    console.log('[AI Player] 0.2.1 загружен');
 });
 
 
