@@ -5,7 +5,7 @@
 // Ключи хранятся только в secrets ST (на сервере); все запросы идут через бэкенд ST.
 
 const MODULE = 'ai_player';
-const VERSION = '0.2.7';
+const VERSION = '0.2.8';
 const CLAUDE_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'];
 const SOURCE = {
     openai: { source: 'custom', secret: 'api_key_custom', label: 'OpenAI-совместимый / реверс-прокси', defUrl: 'https://api.openai.com/v1' },
@@ -594,21 +594,44 @@ function updateThoughtsCount() {
 function appendThought(e) {
     const body = document.querySelector('#aip_thoughts .aip-th-body');
     if (!body) return;
+    const panel = document.getElementById('aip_thoughts');
+    const wasOpen = panel.classList.contains('aip-open') && !panel.classList.contains('aip-min') && !panel.classList.contains('aip-empty');
+    // пользователь внизу (или окно было закрыто/пустое) → прокручиваем; листает старое → не мешаем
+    const atBottom = !wasOpen || body.scrollHeight - body.scrollTop - body.clientHeight < 40;
     const node = thoughtNode(e);
     node.classList.add('aip-new');
     node.addEventListener('animationend', () => node.classList.remove('aip-new'), { once: true });
     body.appendChild(node);
     updateThoughtsCount();
-    if (settings().s.thoughtsHidden) toastr.info('💭 Новый вывод игрока', 'AI Player', { timeOut: 2500 });
-    else showThoughts(true);
-    scrollThoughtsToEnd();
+    if (settings().s.thoughtsHidden) toastr.info('💭 Новая мысль игрока', 'AI Player', { timeOut: 2500 });
+    else showThoughts(true, atBottom);
+    if (!atBottom) panel.classList.add('aip-has-new');
+}
+
+function thoughtsAtBottom(body) { return body.scrollHeight - body.scrollTop - body.clientHeight < 40; }
+
+// Вкл/выкл мыслей игрока (вывод после ответа бота)
+function setReactions(on) {
+    const { s, save } = settings();
+    s.reactions = !!on; save();
+    const panel = document.getElementById('aip_thoughts');
+    panel?.classList.toggle('aip-off', !s.reactions);
+    const btn = panel?.querySelector('[data-act="power"]');
+    if (btn) btn.title = s.reactions ? 'Мысли включены — нажмите, чтобы выключить' : 'Мысли выключены — нажмите, чтобы включить';
+    const cb = document.getElementById('aip_reactions');
+    if (cb) cb.checked = s.reactions;
+    const mi = document.querySelector('#aip_menu_th span');
+    if (mi) mi.textContent = `AI Player — мысли${s.reactions ? '' : ' (выкл.)'}`;
 }
 
 // Прокрутка к последней мысли — после отрисовки: пока окно скрыто/пусто, scrollTop не применяется
 function scrollThoughtsToEnd() {
     const body = document.querySelector('#aip_thoughts .aip-th-body');
     if (!body) return;
-    requestAnimationFrame(() => requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; }));
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        body.scrollTop = body.scrollHeight;
+        document.getElementById('aip_thoughts')?.classList.remove('aip-has-new');
+    }));
 }
 function renderThoughts() {
     const body = document.querySelector('#aip_thoughts .aip-th-body');
@@ -617,10 +640,10 @@ function renderThoughts() {
     updateThoughtsCount();
     scrollThoughtsToEnd();
 }
-function showThoughts(v) {
+function showThoughts(v, scroll = true) {
     const el = document.getElementById('aip_thoughts');
     el.classList.toggle('aip-open', v);
-    if (v) { clampIntoView(el); scrollThoughtsToEnd(); }
+    if (v) { clampIntoView(el); if (scroll) scrollThoughtsToEnd(); }
 }
 function clampIntoView(el) {
     if (!el.style.left) return;
@@ -634,9 +657,17 @@ function clampIntoView(el) {
 function buildThoughts() {
     const el = document.createElement('div');
     el.id = 'aip_thoughts';
-    el.innerHTML = `<div class="aip-th-head"><div class="aip-th-title"><i class="fa-solid fa-comment-dots"></i><b>Мысли игрока</b><span class="aip-th-count"></span></div><span class="aip-th-btns"><a class="aip-icon" data-act="min" title="Свернуть / развернуть"><i class="fa-solid fa-minus"></i></a><a class="aip-icon" data-act="clear" title="Очистить выводы этого чата"><i class="fa-solid fa-trash-can"></i></a><a class="aip-icon" data-act="close" title="Скрыть"><i class="fa-solid fa-xmark"></i></a></span></div><div class="aip-th-body"></div><div class="aip-th-empty">Выводы появятся здесь, когда бот ответит на ход агента.<br><small>Вне ролевой игры — в чат не попадают.</small></div>`;
+    el.innerHTML = `<div class="aip-th-head"><div class="aip-th-title"><i class="fa-solid fa-comment-dots"></i><b>Мысли игрока</b><span class="aip-th-count"></span></div><span class="aip-th-btns"><a class="aip-icon aip-power" data-act="power" title=""><i class="fa-solid fa-power-off"></i></a><a class="aip-icon" data-act="min" title="Свернуть / развернуть"><i class="fa-solid fa-minus"></i></a><a class="aip-icon" data-act="clear" title="Очистить выводы этого чата"><i class="fa-solid fa-trash-can"></i></a><a class="aip-icon" data-act="close" title="Скрыть"><i class="fa-solid fa-xmark"></i></a></span></div><div class="aip-th-off"><i class="fa-solid fa-power-off"></i> Мысли выключены — новые выводы не запрашиваются. <a data-act="on">Включить</a></div><div class="aip-th-body"></div><button type="button" class="aip-th-newbtn" data-act="tonew"><i class="fa-solid fa-arrow-down"></i> Новая мысль</button><div class="aip-th-empty">Мысли появятся здесь, когда бот ответит на ход агента.<br><small>Вне ролевой игры — в чат не попадают.</small></div>`;
     uiHost().appendChild(el);
     el.classList.toggle('aip-min', !!settings().s.thoughtsMin);
+    el.querySelector('[data-act="power"]').onclick = () => {
+        setReactions(!settings().s.reactions);
+        toastr.info(settings().s.reactions ? 'Мысли игрока включены' : 'Мысли игрока выключены — лишних запросов не будет', 'AI Player', { timeOut: 2500 });
+    };
+    el.querySelector('[data-act="on"]').onclick = () => setReactions(true);
+    el.querySelector('[data-act="tonew"]').onclick = scrollThoughtsToEnd;
+    const thBody = el.querySelector('.aip-th-body');
+    thBody.addEventListener('scroll', () => { if (thoughtsAtBottom(thBody)) el.classList.remove('aip-has-new'); }, { passive: true });
     el.querySelector('[data-act="min"]').onclick = () => {
         const { s, save } = settings();
         s.thoughtsMin = !s.thoughtsMin; save();
@@ -828,7 +859,7 @@ function buildModal() {
           </div>
           <div class="aip-card aip-switches">
             <label class="aip-check"><input type="checkbox" id="aip_autoSend"> Сразу отправлять ход в чат <small>иначе — в поле ввода</small></label>
-            <label class="aip-check"><input type="checkbox" id="aip_reactions"> Вывод в окно 💭 после ответа бота <small>доп. короткий запрос</small></label>
+            <label class="aip-check"><input type="checkbox" id="aip_reactions"> Мысли игрока 💭 после ответа бота <small>выкл. — без доп. запросов</small></label>
             <label class="aip-check"><input type="checkbox" id="aip_motion"> Анимации интерфейса <small>можно выключить на слабом телефоне</small></label>
           </div>
         </section>
@@ -928,7 +959,7 @@ function buildModal() {
         el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => { const { s, save } = settings(); s[f] = el.value; save(); });
     }
     for (const f of GLOBAL_CHECKS) {
-        $(`#aip_${f}`).addEventListener('change', e => { const { s, save } = settings(); s[f] = e.target.checked; save(); if (f === 'motion') applyMotion(); });
+        $(`#aip_${f}`).addEventListener('change', e => { const { s, save } = settings(); s[f] = e.target.checked; save(); if (f === 'motion') applyMotion(); if (f === 'reactions') setReactions(e.target.checked); });
     }
     // промпты
     const promptKey = () => $('#aip_promptKey').value;
@@ -1227,6 +1258,7 @@ function initAll() {
     buildModal();
     buildThoughts();
     addButtons();
+    setReactions(settings().s.reactions);
     const c = ctx();
     const ev = c.event_types;
     c.eventSource.on(ev.CHAT_CHANGED, () => {

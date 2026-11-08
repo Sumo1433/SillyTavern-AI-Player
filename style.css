@@ -235,6 +235,27 @@
 .aip-th-body { padding: 10px; overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; }
 #aip_thoughts.aip-min .aip-th-body, #aip_thoughts.aip-min .aip-th-empty { display: none; }
 #aip_thoughts.aip-min .aip-th-head { border-bottom: 0; }
+/* выключатель мыслей */
+.aip-power { color: var(--aip-ok); }
+#aip_thoughts.aip-off .aip-power { color: var(--aip-muted); }
+.aip-th-off { display: none; padding: 7px 12px; font-size: .8em; color: var(--aip-muted); background: var(--aip-surface); border-bottom: 1px solid var(--aip-border); }
+.aip-th-off a { color: var(--aip-accent); cursor: pointer; text-decoration: underline; }
+#aip_thoughts.aip-off .aip-th-off { display: block; }
+#aip_thoughts.aip-min .aip-th-off { display: none; }
+#aip_thoughts.aip-off .aip-th-title i { color: var(--aip-muted); }
+
+/* кнопка «↓ Новая мысль», когда пользователь листает старые */
+.aip-th-newbtn {
+  all: unset; box-sizing: border-box; cursor: pointer;
+  position: absolute; left: 50%; bottom: 10px; transform: translate(-50%, 8px);
+  padding: 4px 12px; border-radius: 999px; font-size: .78em; font-weight: 600;
+  background: var(--aip-accent); color: #fff; box-shadow: 0 4px 14px var(--aip-shadow);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity 160ms ease-out, transform 160ms ease-out, visibility 0s linear 160ms;
+}
+#aip_thoughts.aip-has-new .aip-th-newbtn { opacity: 1; visibility: visible; pointer-events: auto; transform: translate(-50%, 0); transition: opacity 160ms ease-out, transform 160ms ease-out, visibility 0s; }
+#aip_thoughts.aip-min .aip-th-newbtn { display: none; }
+
 .aip-th-empty { display: none; padding: 18px 16px 20px; text-align: center; font-size: .85em; color: var(--aip-muted); line-height: 1.5; }
 #aip_thoughts.aip-empty .aip-th-empty { display: block; }
 #aip_thoughts.aip-empty .aip-th-body { display: none; }
