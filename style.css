@@ -30,6 +30,17 @@
   }
 }
 
+/* ---------- контейнер окон ----------
+   Явный размер экрана вместо top/bottom/100%: в некоторых сборках ST containing block
+   для position:fixed — body нулевой высоты, и окна уезжали за верх экрана. */
+#aip_host {
+  position: fixed; top: 0; left: 0;
+  width: 100vw; height: 100vh; height: 100dvh;
+  z-index: 30000;            /* выше панелей и меню ST */
+  pointer-events: none;      /* сам контейнер клики не перехватывает */
+  margin: 0; padding: 0; border: 0; transform: none;
+}
+
 /* ---------- кнопка ▶ в строке ввода ---------- */
 .aip-play { cursor: pointer; transition: transform 90ms ease-out, color 150ms; }
 .aip-play:hover { color: var(--aip-accent); }
@@ -51,8 +62,8 @@
 
 /* ---------- оверлей и окно ---------- */
 #aip_overlay {
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%;
-  z-index: 30000;   /* выше панелей и меню ST */
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  z-index: 2;
   background: rgba(0, 0, 0, .5);
   display: flex; align-items: center; justify-content: center;
   opacity: 0; visibility: hidden; pointer-events: none;
@@ -184,7 +195,7 @@
 
 /* ---------- окно мыслей ---------- */
 #aip_thoughts {
-  position: fixed; right: 16px; bottom: 90px; z-index: 29999;
+  position: absolute; right: 16px; bottom: 90px; z-index: 1;
   width: min(380px, 92vw); max-height: 55vh; max-height: 55dvh;
   display: flex; flex-direction: column; overflow: hidden;
   opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(12px);

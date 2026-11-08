@@ -5,7 +5,7 @@
 // Ключи хранятся только в secrets ST (на сервере); все запросы идут через бэкенд ST.
 
 const MODULE = 'ai_player';
-const VERSION = '0.2.2';
+const VERSION = '0.2.3';
 const CLAUDE_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'];
 const SOURCE = {
     openai: { source: 'custom', secret: 'api_key_custom', label: 'OpenAI-совместимый / реверс-прокси', defUrl: 'https://api.openai.com/v1' },
@@ -625,7 +625,7 @@ function buildThoughts() {
     const el = document.createElement('div');
     el.id = 'aip_thoughts';
     el.innerHTML = `<div class="aip-th-head"><div class="aip-th-title"><i class="fa-solid fa-comment-dots"></i><b>Мысли игрока</b><span class="aip-th-count"></span></div><span class="aip-th-btns"><a class="aip-icon" data-act="min" title="Свернуть / развернуть"><i class="fa-solid fa-minus"></i></a><a class="aip-icon" data-act="clear" title="Очистить выводы этого чата"><i class="fa-solid fa-trash-can"></i></a><a class="aip-icon" data-act="close" title="Скрыть"><i class="fa-solid fa-xmark"></i></a></span></div><div class="aip-th-body"></div><div class="aip-th-empty">Выводы появятся здесь, когда бот ответит на ход агента.<br><small>Вне ролевой игры — в чат не попадают.</small></div>`;
-    document.body.appendChild(el);
+    uiHost().appendChild(el);
     el.classList.toggle('aip-min', !!settings().s.thoughtsMin);
     el.querySelector('[data-act="min"]').onclick = () => {
         const { s, save } = settings();
@@ -852,7 +852,7 @@ function buildModal() {
         </div>
       </footer>
     </div>`;
-    document.body.appendChild(o);
+    uiHost().appendChild(o);
     const $ = sel => o.querySelector(sel);
     o.addEventListener('mousedown', e => { if (e.target === o) closeModal(); });
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && o.classList.contains('aip-open')) closeModal(); });
@@ -1065,7 +1065,9 @@ function openModal() {
     let o = document.getElementById('aip_overlay');
     try {
         if (!o) { buildModal(); o = document.getElementById('aip_overlay'); }   // кто-то удалил окно — пересобираем
-        document.body.appendChild(o);                                          // поднять поверх элементов, добавленных позже
+        const host = uiHost();
+        document.body.appendChild(host);                                       // поднять поверх элементов, добавленных позже
+        if (o.parentElement !== host) host.appendChild(o);
     } catch (e) {
         console.error('[AI Player] окно не создано', e);
         toastr.error(`AI Player: окно не создано — ${short(e.message)}`);
@@ -1086,6 +1088,19 @@ function openModal() {
 }
 function closeModal() { document.getElementById('aip_overlay').classList.remove('aip-open'); }
 
+// Контейнер для окон расширения с явным размером экрана.
+// Некоторые темы/стили ST меняют containing block у position:fixed (body нулевой высоты),
+// из-за чего окна с top/bottom/height:100% получали высоту 0 и уезжали за экран.
+function uiHost() {
+    let h = document.getElementById('aip_host');
+    if (!h) {
+        h = document.createElement('div');
+        h.id = 'aip_host';
+        document.body.appendChild(h);
+    }
+    return h;
+}
+
 // ---------- Диагностика (для телефона, где нет консоли браузера) ----------
 function diagnose() {
     const lines = [`AI Player ${VERSION} · ${navigator.userAgent.match(/(Chrome|Firefox|Safari)\/[\d.]+/)?.[0] || navigator.userAgent.slice(0, 60)}`];
@@ -1097,7 +1112,7 @@ function diagnose() {
         const cs = getComputedStyle(n), r = n.getBoundingClientRect();
         return `${id}: в ${n.parentElement?.id || n.parentElement?.tagName} · class="${n.className}" · display=${cs.display} vis=${cs.visibility} op=${cs.opacity} z=${cs.zIndex} pos=${cs.position} · ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}×${Math.round(r.height)}`;
     };
-    lines.push(probe('aip_play'), probe('aip_menu'));
+    lines.push(probe('aip_play'), probe('aip_menu'), probe('aip_host'));
     const o = document.getElementById('aip_overlay');
     const wasOpen = o?.classList.contains('aip-open');
     if (o) o.classList.add('aip-open');                 // принудительно открыть и посмотреть, что получилось
