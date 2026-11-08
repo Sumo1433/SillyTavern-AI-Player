@@ -1,12 +1,13 @@
 ﻿// AI Player — расширение SillyTavern «ИИ против ИИ».
 // Агент играет за выбранную персону {{user}} против бота таверны. Работает только по кнопке ▶.
 // Цикл: ▶ → агент пишет ход → ход уходит в чат → бот отвечает → агент читает ответ и пишет
-// короткий вывод в окно 💭 (в чат не попадает).
+// короткое впечатление об игре в окно 💭 (в чат не попадает). По желанию агент ведёт «записи» —
+// память персонажа (цели, отношения, обещания, факты), которая переживает обрезку истории.
 // Ключи хранятся в хранилище ключей SillyTavern (secrets.json на сервере таверны — там, где она
 // запущена); все запросы идут через бэкенд ST.
 
 const MODULE = 'ai_player';
-const VERSION = '0.3.3';
+const VERSION = '0.4.0';
 // ID из списка SillyTavern 1.19 + актуальные
 const CLAUDE_MODELS = ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5-5', 'claude-sonnet-5', 'claude-haiku-5-5'];
 const SOURCE = {
@@ -36,10 +37,12 @@ const DEFAULTS = {
     motion: true,              // анимации интерфейса
     uiTab: 'conn',
     thoughtsMin: false,
+    memory: false,             // записи игрока (память персонажа) — доп. запрос раз в N ходов
+    memoryEvery: 3,            // обновлять записи каждые N ходов агента
 };
 const PROFILE_FIELDS = ['provider', 'url', 'model', 'temperature', 'contextSize', 'proxyPassword'];
-const GLOBAL_FIELDS = ['maxTokens', 'contextMessages', 'minWords', 'maxWords', 'knowledge', 'extraInstructions', 'roleOverride', 'customPrompt', 'customDepth', 'customRole'];
-const GLOBAL_CHECKS = ['autoSend', 'reactions', 'sendTemperature', 'motion'];
+const GLOBAL_FIELDS = ['maxTokens', 'contextMessages', 'minWords', 'maxWords', 'knowledge', 'extraInstructions', 'roleOverride', 'customPrompt', 'customDepth', 'customRole', 'memoryEvery'];
+const GLOBAL_CHECKS = ['autoSend', 'reactions', 'sendTemperature', 'motion', 'memory'];
 const applyMotion = () => document.body.classList.toggle('aip-nomotion', !settings().s.motion);
 const REQUEST_TIMEOUT = 180000;
 
@@ -54,8 +57,10 @@ const chatId = () => { try { return ctx().getCurrentChatId?.() ?? null; } catch 
 let busy = false;
 let abortCtl = null;
 let pendingMeta = null;
-let reactCtl = null;          // запрос «мыслей» — отменяется при смене чата и выключении мыслей
+let reactCtl = null;          // запрос «впечатлений» — отменяется при смене чата и их выключении
 const reacted = new Set();
+let memCtl = null;            // запрос обновления записей игрока
+let memBusy = false;
 
 // ---------- Настройки и профили ----------
 function newProfile(name, from = {}) {
@@ -272,7 +277,32 @@ const PROMPT_DEFAULTS = {
 - не пересказывай сцену, не перечисляй критерии, без пунктов, заголовков и меток;
 - если партнёр пишет за тебя, ходит по кругу или сыплет штампами — скажи об этом как игрок, которому это мешает играть, а не как проверяющий.
 В самом конце отдельной строкой — твоя оценка партнёра по ощущению, просто «N/10». Других чисел с «/10» не пиши.`,
+    // «Записи игрока» — память персонажа, переживающая обрезку истории
+    memory: `Ты ведёшь личные записи игрока за «{player}» в текстовой ролевой игре против «{partner}». Записи нужны, чтобы «{player}» не забыл важное, когда старые сообщения выпадут из истории.
+
+Персонаж:
+{persona}
+
+Тебе дадут прежние записи (могут быть пустыми) и новые сообщения игры (ходы «{player}» помечены [ТЫ]). Перепиши записи целиком с учётом нового.
+
+Ровно эти разделы, коротко, пунктами:
+СОСТОЯНИЕ: где «{player}» сейчас, в каком он виде (раны, усталость), что при нём важного.
+ЦЕЛИ: долгая и ближняя — чего он добивается.
+ОТНОШЕНИЯ: к каждому важному персонажу одной строкой (доверие, страх, симпатия, обида, долг).
+ОБЕЩАНИЯ И ДОГОВОРЫ: кто, кому, что обещал или должен.
+ФАКТЫ: что «{player}» точно видел, слышал или узнал.
+ДОГАДКИ: что он только подозревает. Догадка не становится фактом, пока игра её не подтвердит.
+НЕЗАКРЫТОЕ: конфликты, планы, вопросы без ответа.
+
+Правила:
+- Только то, что было в сообщениях игры или в прежних записях. Ничего не выдумывай и не решай за партнёра.
+- С точки зрения «{player}»: чего он не видел и не мог знать, в записи не попадает.
+- Устаревшее обновляй или убирай: рана зажила, долг отдан, обещание выполнено.
+- Не пересказывай сцены по порядку — только то, что пригодится дальше.
+- Всего не больше 250 слов. Пустой раздел — «—». Выводи только записи, без вступлений.`,
 };
+// Заголовок блока записей в системном промпте хода
+const MEMORY_HEADER = 'ЗАПИСИ «{player}» О ХОДЕ ИГРЫ — его собственная память. Держись этих фактов, целей и обещаний, даже если в истории ниже их уже нет; догадки остаются догадками:';
 
 // Авторские варианты — для сравнения моделей при разных стилях игрока (вкладка «Промпты» → пресет)
 const PROMPT_PRESETS = {
@@ -389,7 +419,7 @@ const PROMPT_PRESETS = {
 for (const p of Object.values(PROMPT_PRESETS)) p.reaction = PROMPT_DEFAULTS.reaction;
 // старые «диагностические» промпты мыслей (до 0.3.1) узнаём по строке с меткой оценки
 const OLD_REACTION_MARK = /^Партнёр: N\/10 —/m;
-const PROMPT_LABELS = { system: 'Системный промпт игрока', turn: 'Напоминание перед ходом', reaction: 'Вывод после ответа бота' };
+const PROMPT_LABELS = { system: 'Системный промпт игрока', turn: 'Напоминание перед ходом', reaction: 'Впечатления после ответа бота', memory: 'Записи игрока (память)' };
 const PLACEHOLDERS = {
     '{player}': 'имя персоны (агент)', '{partner}': 'имя бота / участников группы', '{persona}': 'описание персоны или «Роль игрока»',
     '{card}': 'описание, характер и сценарий карты', '{scenario}': 'сценарий', '{extra}': 'доп. указания игроку',
@@ -427,7 +457,8 @@ function renderPrompt(s, sync, key) {
     return t.replace(/\n{3,}/g, '\n\n').trim();
 }
 
-const buildSystemPrompt = (s, sync) => renderPrompt(s, sync, 'system');
+// Системный промпт хода + записи игрока (если память включена и записи есть)
+const buildSystemPrompt = (s, sync) => renderPrompt(s, sync, 'system') + memoryBlock(s, sync);
 
 // Свой промпт пользователя (вкладка «Промпты» → «Свой промпт»): те же плейсхолдеры и макросы ST
 function renderCustomPrompt(s, sync) {
@@ -439,8 +470,13 @@ function renderCustomPrompt(s, sync) {
     return t.trim();
 }
 
-// Грубая оценка токенов (для обрезки); точный подсчёт — через токенайзер ST в шкале контекста
-const estTokens = t => Math.ceil(String(t || '').length / 3.2);
+// Грубая оценка токенов (для обрезки); точный подсчёт — через токенайзер ST в шкале контекста.
+// Кириллицу токенайзеры режут мельче латиницы, поэтому считаем её отдельно (с запасом)
+const estTokens = t => {
+    const str = String(t || '');
+    const cyr = (str.match(/[Ѐ-ӿ]/g) || []).length;
+    return Math.ceil(cyr / 2.5 + (str.length - cyr) / 3.5);
+};
 const ctxLimit = p => num(p?.contextSize, 1000, 2000000, 32000);
 
 // Источник истории — ТОЛЬКО ctx().chat, т.е. открытый сейчас чат. Другие чаты не читаются.
@@ -454,11 +490,15 @@ function buildMessages(s, sync, system = '') {
     // обрезка по бюджету токенов: лимит модели − ответ − системный промпт − запас
     const custom = renderCustomPrompt(s, sync);
     const budget = ctxLimit(p) - num(s.maxTokens, 100, 16000, 1200) - estTokens(system) - estTokens(getPrompt(s, 'turn')) - estTokens(custom) - 600;
-    const cost = arr => arr.reduce((a, m) => a + estTokens(m.mes) + 8, 0) + (first ? estTokens(first.mes) : 0);
+    let keepFirst = !!first;
+    const cost = () => tail.reduce((a, m) => a + estTokens(m.mes) + 8, 0) + (keepFirst ? estTokens(first.mes) + 8 : 0);
     let trimmed = Math.max(0, all.length - (first ? 1 : 0) - tail.length);
-    while (tail.length > 1 && cost(tail) > budget) { tail = tail.slice(1); trimmed++; }
-    const chat = first ? [first, ...tail] : tail;
-    const gap = trimmed > 0 && !!first;
+    while (tail.length > 1 && cost() > budget) { tail = tail.slice(1); trimmed++; }
+    // приветствие держим, пока влезает; не влезает даже с одним последним сообщением — жертвуем им
+    if (keepFirst && cost() > budget) { keepFirst = false; trimmed++; }
+    const overflow = cost() > budget;                     // не влезает даже минимальный контекст
+    const chat = keepFirst ? [first, ...tail] : tail;
+    const gap = trimmed > 0 && keepFirst;
     const raw = [];
     chat.forEach((m, i) => {
         if (i === 1 && gap) raw.push({ role: 'user', content: '[…часть истории пропущена…]' });
@@ -484,8 +524,139 @@ function buildMessages(s, sync, system = '') {
     const last = msgs[msgs.length - 1];
     if (last.role === 'user') last.content += `\n\n${turn}`;
     else msgs.push({ role: 'user', content: turn });
-    msgs.meta = { chatId: chatId(), total: all.length, included: chat.length, trimmed };
+    msgs.meta = { chatId: chatId(), total: all.length, included: chat.length, trimmed, overflow };
     return msgs;
+}
+
+// ---------- Записи игрока (память персонажа) ----------
+// chatMetadata.aip_memory = { chatId, text, upTo, upToDate, updated, model }
+// upTo/upToDate — последнее учтённое сообщение (ход агента; ответ бота после него не входит,
+// поэтому свайп и перегенерация ответа записи не портят).
+function memoryState() {
+    const c = ctx();
+    const mem = c.chatMetadata?.aip_memory;
+    if (!mem || !String(mem.text || '').trim()) return null;
+    const chat = c.chat || [];
+    const cid = chatId();
+    const sameChat = !mem.chatId || !cid || mem.chatId === cid;
+    let index = -1, stale = false;
+    if (mem.upToDate) {
+        index = chat.findIndex(m => m.send_date === mem.upToDate);
+        if (index < 0) {
+            // ветка от более раннего места — записи знают «будущее», в этом чате их не используем
+            if (!sameChat) return null;
+            index = Math.min(num(mem.upTo, -1, 1e9, -1), chat.length - 1);
+            stale = true;     // учтённое сообщение удалено — в записях могут быть отменённые события
+        }
+    }
+    return { ...mem, index, stale };
+}
+
+function memoryBlock(s, sync) {
+    if (!s.memory) return '';
+    const mem = memoryState();
+    if (!mem) return '';
+    return `\n\n${MEMORY_HEADER.replace('{player}', sync.personaName)}\n${String(mem.text).trim()}`;
+}
+
+// Обновляет записи по сообщениям после последнего учтённого до upTo (по умолчанию — до конца чата)
+async function updateMemory({ upTo, manual = false } = {}) {
+    const c = ctx();
+    const id0 = chatId();
+    if (!id0) { if (manual) toastr.warning('Откройте чат'); return false; }
+    if (memBusy) { if (manual) toastr.info('Записи уже обновляются'); return false; }
+    const { s } = settings();
+    const chat = c.chat || [];
+    const end = Math.min(upTo ?? chat.length - 1, chat.length - 1);
+    const mem = memoryState();
+    const fresh = chat.slice(mem ? mem.index + 1 : 0, end + 1).filter(m => !m.is_system && (m.mes || '').trim());
+    if (!fresh.length) { if (manual) toastr.info('Новых сообщений для записей нет'); return false; }
+    const lastAgent = chat.slice(0, end + 1).reverse().find(m => m.is_user && m.extra?.aip);
+    const p = findProfile(lastAgent?.extra.aip.profileId) || activeProfile();
+    if (!p?.model) { if (manual) toastr.warning('Укажите модель в окне AI Player'); return false; }
+    const sync = getSync();
+    const system = renderPrompt(s, sync, 'memory');
+    const endDate = chat[end]?.send_date ?? null;
+    // самые новые сообщения важнее: если не влезают, отбрасываем старые
+    let lines = fresh.map(m => `${m.is_user ? '[ТЫ] ' : ''}${m.name}: ${m.mes}`);
+    const budget = ctxLimit(p) - 2000 - estTokens(system) - estTokens(mem?.text);
+    let skipped = 0;
+    while (lines.length > 1 && lines.reduce((a, l) => a + estTokens(l) + 4, 0) > budget) { lines = lines.slice(1); skipped++; }
+    const user = `Прежние записи:\n${mem ? String(mem.text).trim() : '(пока пусто)'}\n\n`
+        + `Новые сообщения игры${skipped ? ` (самые старые ${skipped} не поместились)` : ''}:\n\n${lines.join('\n\n')}\n\n`
+        + `[Обнови записи «${sync.personaName}». Выведи только записи.]`;
+    memBusy = true;
+    memCtl = new AbortController();
+    const signal = memCtl.signal;
+    renderMemory();
+    try {
+        const res = await callModel(p, s, system, [{ role: 'user', content: user }],
+            { maxTokens: srcOf(p).source === 'claude' ? 2500 : 1000, signal });
+        if (chatId() !== id0 || signal.aborted) return false;
+        const text = String(res.text || '').replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '').trim();
+        if (!text) throw new Error('модель вернула пустые записи');
+        if (res.truncated) toastr.warning('Записи обрезаны по лимиту токенов — часть разделов могла потеряться', 'AI Player');
+        const meta = ctx().chatMetadata;
+        if (!meta) return false;
+        meta.aip_memory = { chatId: id0, text, upTo: end, upToDate: endDate, updated: Date.now(), model: p.model };
+        ctx().saveMetadata?.();
+        if (manual) toastr.success('Записи игрока обновлены', 'AI Player', { timeOut: 2500 });
+        return true;
+    } catch (e) {
+        if (e.name !== 'AbortError') { console.warn('[AI Player] записи не обновлены:', e); toastr.warning(`AI Player: записи не обновлены — ${short(e.message)}`); }
+        return false;
+    } finally {
+        memBusy = false;
+        memCtl = null;
+        renderMemory();
+    }
+}
+
+// После ответа бота на ход агента: пора ли обновить записи (каждые N ходов агента)
+function maybeUpdateMemory(id) {
+    const { s } = settings();
+    if (!s.memory) return;
+    const c = ctx();
+    const m = c.chat?.[id];
+    if (!m || m.is_user || m.is_system) return;
+    let j = id - 1;
+    while (j >= 0 && c.chat[j].is_system) j--;
+    const pm = c.chat[j];
+    if (!pm?.is_user || !pm.extra?.aip) return;
+    const mem = memoryState();
+    const turns = c.chat.slice(mem ? mem.index + 1 : 0, j + 1).filter(x => x.is_user && x.extra?.aip).length;
+    if (turns >= num(s.memoryEvery, 1, 50, 3)) updateMemory({ upTo: j });
+}
+
+let memSaveTimer = null;
+function renderMemory() {
+    const ta = document.getElementById('aip_memText');
+    if (!ta) return;
+    const mem = chatId() ? memoryState() : null;
+    if (document.activeElement !== ta) ta.value = mem?.text || '';
+    ta.readOnly = memBusy;
+    document.getElementById('aip_memUpdate')?.classList.toggle('disabled', memBusy);
+    const { s } = settings();
+    const when = mem?.updated ? new Date(mem.updated).toLocaleString() : '';
+    document.getElementById('aip_memState').textContent = [
+        memBusy ? '⏳ Обновляю записи…'
+            : mem ? `Записи от ${when || '—'}${mem.model ? ` · ${mem.model}` : ''}${mem.index >= 0 ? ` · учтены сообщения до #${mem.index}` : ''}`
+                : 'Записей пока нет.',
+        mem?.stale ? '⚠ Сообщения, по которым составлены записи, удалены — в записях могут остаться отменённые события. Поправьте их или нажмите «Обновить».' : '',
+        s.memory ? '' : 'Память выключена: записи не обновляются сами и не подмешиваются в ход.',
+    ].filter(Boolean).join('\n');
+}
+// Ручная правка записей: сохраняем в метаданные текущего чата
+function onMemoryInput(e) {
+    const meta = ctx().chatMetadata;
+    const id0 = chatId();
+    if (!meta || !id0 || memBusy) return;
+    const text = e.target.value;
+    if (!text.trim()) delete meta.aip_memory;
+    else if (meta.aip_memory) Object.assign(meta.aip_memory, { text, chatId: id0, updated: Date.now() });
+    else meta.aip_memory = { chatId: id0, text, upTo: -1, upToDate: null, updated: Date.now(), model: 'вручную' };
+    clearTimeout(memSaveTimer);
+    memSaveTimer = setTimeout(() => { if (chatId() === id0) ctx().saveMetadata?.(); }, 800);
 }
 
 // ---------- Шкала контекста ----------
@@ -528,13 +699,15 @@ async function updateCtxMeter() {
         left -= w;
         document.getElementById(`aip_ctx_${key}`).style.width = `${w}%`;
     }
-    box.dataset.level = pct > 1 ? 'over' : pct > 0.85 ? 'high' : 'ok';
-    const k = n => n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n);
     const m = msgs.meta;
+    box.dataset.level = pct > 1 || m.overflow ? 'over' : pct > 0.85 ? 'high' : 'ok';
+    const k = n => n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n);
+    const memTok = memoryBlock(s, sync) ? await countTokens(memoryBlock(s, sync)) : 0;
+    if (chatId() !== id0 || seq !== meterSeq) return;
     document.getElementById('aip_ctxText').textContent =
-        `${k(used)} / ${k(limit)} (${Math.round(pct * 100)}%) · сообщений ${m.included}/${m.total}${m.trimmed ? ` · ${m.trimmed} не влезло` : ''}`;
+        `${k(used)} / ${k(limit)} (${Math.round(pct * 100)}%) · сообщений ${m.included}/${m.total}${m.trimmed ? ` · ${m.trimmed} не влезло` : ''}${m.overflow ? ' · ⚠ последнее сообщение не влезает' : ''}`;
     box.title = `Только текущий чат: ${sync.personaName} × ${sync.card.name}\n`
-        + `Системный промпт: ${sys} ток.\nИстория чата: ${hist} ток.\nРезерв на ответ: ${res} ток.\nЛимит модели (настройка профиля): ${limit} ток.`;
+        + `Системный промпт: ${sys} ток.${memTok ? ` (из них записи игрока: ${memTok})` : ''}\nИстория чата: ${hist} ток.\nРезерв на ответ: ${res} ток.\nЛимит модели (настройка профиля): ${limit} ток.`;
 }
 
 const buildReactionPrompt = (s, sync) => renderPrompt(s, sync, 'reaction');
@@ -692,6 +865,7 @@ async function playTurn() {
         const system = buildSystemPrompt(s, sync);
         const messages = buildMessages(s, sync, system);
         if (messages.meta.chatId !== id0) throw new Error('Чат сменился при сборке контекста');
+        if (messages.meta.overflow) toastr.warning('Контекст переполнен: даже последнее сообщение не влезает в лимит модели. Увеличьте «Контекст модели» или уменьшите «Макс. токенов».', 'AI Player', { timeOut: 7000 });
         const res = await callModel(p, s, system, messages, { signal, stop });
         if (signal.aborted) return;
 
@@ -794,7 +968,7 @@ async function onBotMessage(id) {
         reacted.delete(key);                          // неудачную реакцию можно получить повторно (свайпом/перегенерацией)
         if (e.name === 'AbortError') return;
         console.warn('[AI Player] вывод не получен:', e);
-        toastr.warning(`AI Player: вывод не получен — ${short(e.message)}`);
+        toastr.warning(`AI Player: впечатление не получено — ${short(e.message)}`);
     }
 }
 
@@ -891,7 +1065,7 @@ function appendThought(e) {
     node.addEventListener('animationend', () => node.classList.remove('aip-new'), { once: true });
     body.appendChild(node);
     updateThoughtsCount();
-    if (settings().s.thoughtsHidden) toastr.info('💭 Новая мысль игрока', 'AI Player', { timeOut: 2500 });
+    if (settings().s.thoughtsHidden) toastr.info('💭 Новое впечатление игрока', 'AI Player', { timeOut: 2500 });
     else showThoughts(true, atBottom);
     if (!atBottom) panel.classList.add('aip-has-new');
 }
@@ -906,11 +1080,11 @@ function setReactions(on) {
     const panel = document.getElementById('aip_thoughts');
     panel?.classList.toggle('aip-off', !s.reactions);
     const btn = panel?.querySelector('[data-act="power"]');
-    if (btn) btn.title = s.reactions ? 'Мысли включены — нажмите, чтобы выключить' : 'Мысли выключены — нажмите, чтобы включить';
+    if (btn) btn.title = s.reactions ? 'Впечатления включены — нажмите, чтобы выключить' : 'Впечатления выключены — нажмите, чтобы включить';
     const cb = document.getElementById('aip_reactions');
     if (cb) cb.checked = s.reactions;
     const mi = document.querySelector('#aip_menu_th span');
-    if (mi) mi.textContent = `AI Player — мысли${s.reactions ? '' : ' (выкл.)'}`;
+    if (mi) mi.textContent = `AI Player — впечатления${s.reactions ? '' : ' (выкл.)'}`;
 }
 
 // Прокрутка к последней мысли — после отрисовки: пока окно скрыто/пусто, scrollTop не применяется
@@ -949,12 +1123,12 @@ function clampIntoView(el) {
 function buildThoughts() {
     const el = document.createElement('div');
     el.id = 'aip_thoughts';
-    el.innerHTML = `<div class="aip-th-head"><div class="aip-th-title"><i class="fa-solid fa-comment-dots"></i><b>Мысли игрока</b><span class="aip-th-count"></span></div><span class="aip-th-btns"><a class="aip-icon aip-power" data-act="power" title=""><i class="fa-solid fa-power-off"></i></a><a class="aip-icon" data-act="min" title="Свернуть / развернуть"><i class="fa-solid fa-minus"></i></a><a class="aip-icon" data-act="clear" title="Очистить выводы этого чата"><i class="fa-solid fa-trash-can"></i></a><a class="aip-icon" data-act="close" title="Скрыть"><i class="fa-solid fa-xmark"></i></a></span></div><div class="aip-th-off"><i class="fa-solid fa-power-off"></i> Мысли выключены — новые выводы не запрашиваются. <a data-act="on">Включить</a></div><div class="aip-th-body"></div><button type="button" class="aip-th-newbtn" data-act="tonew"><i class="fa-solid fa-arrow-down"></i> Новая мысль</button><div class="aip-th-empty">Мысли появятся здесь, когда бот ответит на ход агента.<br><small>Вне ролевой игры — в чат не попадают.</small></div>`;
+    el.innerHTML = `<div class="aip-th-head"><div class="aip-th-title"><i class="fa-solid fa-comment-dots"></i><b>Впечатления игрока</b><span class="aip-th-count"></span></div><span class="aip-th-btns"><a class="aip-icon aip-power" data-act="power" title=""><i class="fa-solid fa-power-off"></i></a><a class="aip-icon" data-act="min" title="Свернуть / развернуть"><i class="fa-solid fa-minus"></i></a><a class="aip-icon" data-act="clear" title="Очистить впечатления этого чата"><i class="fa-solid fa-trash-can"></i></a><a class="aip-icon" data-act="close" title="Скрыть"><i class="fa-solid fa-xmark"></i></a></span></div><div class="aip-th-off"><i class="fa-solid fa-power-off"></i> Впечатления выключены — новые не запрашиваются. <a data-act="on">Включить</a></div><div class="aip-th-body"></div><button type="button" class="aip-th-newbtn" data-act="tonew"><i class="fa-solid fa-arrow-down"></i> Новое впечатление</button><div class="aip-th-empty">Впечатления игрока об игре появятся здесь, когда бот ответит на ход агента.<br><small>Это слова игрока, а не персонажа. В чат не попадают.</small></div>`;
     uiHost().appendChild(el);
     el.classList.toggle('aip-min', !!settings().s.thoughtsMin);
     el.querySelector('[data-act="power"]').onclick = () => {
         setReactions(!settings().s.reactions);
-        toastr.info(settings().s.reactions ? 'Мысли игрока включены' : 'Мысли игрока выключены — лишних запросов не будет', 'AI Player', { timeOut: 2500 });
+        toastr.info(settings().s.reactions ? 'Впечатления игрока включены' : 'Впечатления игрока выключены — лишних запросов не будет', 'AI Player', { timeOut: 2500 });
     };
     el.querySelector('[data-act="on"]').onclick = () => setReactions(true);
     el.querySelector('[data-act="tonew"]').onclick = scrollThoughtsToEnd;
@@ -972,7 +1146,7 @@ function buildThoughts() {
         const { s, save } = settings(); s.thoughtsHidden = true; save();
     };
     el.querySelector('[data-act="clear"]').onclick = () => {
-        if (!confirm('Очистить выводы игрока в этом чате?')) return;
+        if (!confirm('Очистить впечатления игрока в этом чате?')) return;
         const meta = ctx().chatMetadata;
         if (meta) { meta.aip_log = []; ctx().saveMetadata?.(); }
         renderThoughts();
@@ -1050,8 +1224,9 @@ function matchData() {
     return {
         format: 'ai-player-match/2', exported: new Date().toISOString(), chatId: chatId(),
         character: c.name2, persona: c.name1,
-        settings: { maxTokens: s.maxTokens, contextMessages: s.contextMessages, minWords: s.minWords, maxWords: s.maxWords, knowledge: s.knowledge, extraInstructions: s.extraInstructions, roleOverride: s.roleOverride, customPrompt: s.customPrompt, customDepth: s.customDepth, customRole: s.customRole },
+        settings: { maxTokens: s.maxTokens, contextMessages: s.contextMessages, minWords: s.minWords, maxWords: s.maxWords, knowledge: s.knowledge, extraInstructions: s.extraInstructions, roleOverride: s.roleOverride, customPrompt: s.customPrompt, customDepth: s.customDepth, customRole: s.customRole, memory: s.memory, memoryEvery: s.memoryEvery },
         turns,   // ключей и secretId здесь нет
+        memory: memoryState()?.text ?? null,
     };
 }
 const fileBase = () => `aip_${(ctx().name2 || 'chat').replace(/[^\p{L}\p{N}_-]+/gu, '_')}_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}`;
@@ -1066,6 +1241,7 @@ function exportMD() {
         out.push(`### #${t.index} ${t.name}${tag}${extra}`, '', t.text, '');
         for (const r of t.reactions) out.push(...r.text.split('\n').map(l => `> 💭 ${l}`), '');
     }
+    if (d.memory) out.push('## Записи игрока', '', d.memory, '');
     download(`${fileBase()}.md`, out.join('\n'), 'text/markdown');
 }
 
@@ -1162,7 +1338,7 @@ function buildModal() {
           </div>
           <div class="aip-card aip-switches">
             <label class="aip-check"><input type="checkbox" id="aip_autoSend"> Сразу отправлять ход в чат <small>иначе — в поле ввода</small></label>
-            <label class="aip-check"><input type="checkbox" id="aip_reactions"> Мысли игрока 💭 после ответа бота <small>выкл. — без доп. запросов</small></label>
+            <label class="aip-check"><input type="checkbox" id="aip_reactions"> Впечатления игрока 💭 после ответа бота <small>выкл. — без доп. запросов</small></label>
             <label class="aip-check"><input type="checkbox" id="aip_motion"> Анимации интерфейса <small>можно выключить на слабом телефоне</small></label>
           </div>
         </section>
@@ -1206,10 +1382,22 @@ function buildModal() {
           <div class="aip-card">
             <div class="aip-card-title">Партия</div>
             <div class="aip-actions">
-              <button type="button" class="menu_button" id="aip_th_toggle"><i class="fa-solid fa-comment-dots"></i> Окно мыслей</button>
+              <button type="button" class="menu_button" id="aip_th_toggle"><i class="fa-solid fa-comment-dots"></i> Окно впечатлений</button>
               <button type="button" class="menu_button" id="aip_expMD"><i class="fa-solid fa-file-lines"></i> Экспорт .md</button>
               <button type="button" class="menu_button" id="aip_expJSON"><i class="fa-solid fa-file-code"></i> Экспорт .json</button>
             </div>
+          </div>
+          <div class="aip-card">
+            <div class="aip-card-title">Память игрока (записи)</div>
+            <label class="aip-check"><input type="checkbox" id="aip_memory"> Вести записи и подмешивать их в ход <small>доп. запрос раз в N ходов</small></label>
+            <label>Обновлять каждые N ходов агента</label><input id="aip_memoryEvery" type="number" min="1" max="50">
+            <textarea id="aip_memText" class="aip-prompt" spellcheck="false" placeholder="Записей пока нет. Они появятся через N ходов агента или по кнопке «Обновить сейчас». Можно написать и вручную."></textarea>
+            <div class="aip-note" id="aip_memState"></div>
+            <div class="aip-actions">
+              <button type="button" class="menu_button" id="aip_memUpdate"><i class="fa-solid fa-rotate"></i> Обновить сейчас</button>
+              <button type="button" class="menu_button" id="aip_memClear"><i class="fa-solid fa-trash-can"></i> Очистить</button>
+            </div>
+            <div class="aip-note">Сводка от лица персонажа: состояние, цели, отношения, обещания, факты и догадки. Она помогает не забыть важное, когда старые сообщения не влезают в контекст. У каждого чата свои записи, они хранятся в метаданных чата. Править можно прямо здесь.</div>
           </div>
         </section>
       </div>
@@ -1284,8 +1472,19 @@ function buildModal() {
         el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => { const { s, save } = settings(); s[f] = el.value; save(); });
     }
     for (const f of GLOBAL_CHECKS) {
-        $(`#aip_${f}`).addEventListener('change', e => { const { s, save } = settings(); s[f] = e.target.checked; save(); if (f === 'motion') applyMotion(); if (f === 'reactions') setReactions(e.target.checked); });
+        $(`#aip_${f}`).addEventListener('change', e => { const { s, save } = settings(); s[f] = e.target.checked; save(); if (f === 'motion') applyMotion(); if (f === 'reactions') setReactions(e.target.checked); if (f === 'memory') { if (!e.target.checked) memCtl?.abort(); renderMemory(); } });
     }
+    // записи игрока
+    $('#aip_memText').addEventListener('input', onMemoryInput);
+    $('#aip_memUpdate').onclick = () => { if (!memBusy) updateMemory({ manual: true }); };
+    $('#aip_memClear').onclick = () => {
+        const meta = ctx().chatMetadata;
+        if (!meta?.aip_memory || !confirm('Очистить записи игрока в этом чате?')) return;
+        memCtl?.abort();
+        delete meta.aip_memory;
+        ctx().saveMetadata?.();
+        renderMemory(); scheduleMeter();
+    };
     // промпты
     const promptKey = () => $('#aip_promptKey').value;
     $('#aip_promptKey').addEventListener('change', fillPrompt);
@@ -1304,7 +1503,7 @@ function buildModal() {
         const { s, save } = settings();
         const hasCustom = Object.values(s.prompts || {}).some(v => (v || '').trim());
         if (hasCustom && !confirm(`Заменить текущие промпты пресетом «${name}»? Ваши правки будут потеряны.`)) return;
-        s.prompts = preset ? { system: preset.system, turn: preset.turn, reaction: preset.reaction } : { system: '', turn: '', reaction: '' };
+        s.prompts = preset ? { system: preset.system, turn: preset.turn, reaction: preset.reaction, memory: '' } : { system: '', turn: '', reaction: '', memory: '' };
         s.promptPreset = key;
         save(); fillPrompt(); scheduleMeter();
         toastr.success(`Пресет «${name}» применён`, 'AI Player', { timeOut: 2500 });
@@ -1430,6 +1629,7 @@ function fillModal() {
     document.getElementById('aip_keyInput').value = '';
     refreshKeyState();
     fillPrompt();
+    renderMemory();
 }
 
 function fillPrompt() {
@@ -1612,7 +1812,7 @@ function addButtons() {
         };
         menu.append(
             mk('aip_menu', 'fa-robot', 'AI Player — настройки', safe('настройки', openModal)),
-            mk('aip_menu_th', 'fa-comment-dots', 'AI Player — окно мыслей', safe('окно мыслей', toggleThoughts)),
+            mk('aip_menu_th', 'fa-comment-dots', 'AI Player — впечатления', safe('окно впечатлений', toggleThoughts)),
             mk('aip_menu_diag', 'fa-stethoscope', 'AI Player — диагностика', safe('диагностика', diagnose)),
         );
     }
@@ -1632,9 +1832,11 @@ function initAll() {
     c.eventSource.on(ev.CHAT_CHANGED, () => {
         abortCtl?.abort();
         reactCtl?.abort();
+        memCtl?.abort();
         pendingMeta = null;
         reacted.clear();
         renderThoughts();
+        renderMemory();
         renderAllBadges();                       // CHAT_CHANGED приходит после отрисовки сообщений
         if (document.getElementById('aip_overlay')?.classList.contains('aip-open')) refreshSync();
     });
@@ -1657,10 +1859,11 @@ function initAll() {
         if (['continue', 'append', 'appendFinal'].includes(type)) { retagThoughts(id); return; }
         if (['first_message', 'command', 'extension', 'impersonate'].includes(type)) return;
         onBotMessage(id);
+        maybeUpdateMemory(id);
     });
     // удалили сообщение / перегенерировали ответ / удалили чат — убираем мысли о несуществующих сообщениях
     for (const name of ['MESSAGE_DELETED', 'CHAT_DELETED', 'GROUP_CHAT_DELETED']) {
-        if (ev[name]) c.eventSource.on(ev[name], () => renderThoughts());
+        if (ev[name]) c.eventSource.on(ev[name], () => { renderThoughts(); renderMemory(); });
     }
     if (ev.USER_MESSAGE_RENDERED) c.eventSource.on(ev.USER_MESSAGE_RENDERED, renderBadge);
     if (ev.MORE_MESSAGES_LOADED) c.eventSource.on(ev.MORE_MESSAGES_LOADED, renderAllBadges);

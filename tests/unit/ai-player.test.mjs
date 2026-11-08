@@ -2,7 +2,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     setup, waitFor, sleep, agentTurn, botReply, botSwipe, botContinue, regenerate, PROFILE, newId,
-    isGenerate, isReactionCall, isTurnCall, isSecretCall, REACTION_TEXT,
+    isGenerate, isReactionCall, isTurnCall, isSecretCall, REACTION_TEXT, isMemoryCall, MEMORY_TEXT,
 } from './harness.mjs';
 
 let t;
@@ -20,7 +20,7 @@ test('1. Инициализация: DOM-элементы, кнопка, пун�
     assert.equal(t.$('#aip_play').parentElement.id, 'rightSendForm');
     assert.ok(t.$('#aip_host #aip_overlay') && t.$('#aip_host #aip_thoughts'), 'окна лежат в #aip_host');
     assert.equal(t.$('#extensionsMenu').children.length, 3);
-    assert.match(t.$('#aip_menu_th span').textContent, /мысли$/);
+    assert.match(t.$('#aip_menu_th span').textContent, /впечатления$/);
     assert.ok(!t.$('#aip_overlay').classList.contains('aip-open'));
     assert.ok(t.logs.some(l => l.join(' ').includes('загружен')));
     assert.ok(!t.logs.some(l => l[0] === 'error' || l[0] === 'jsdomError'), JSON.stringify(t.logs));
@@ -972,4 +972,49 @@ test('14c. [БАГ] Claude через реверс-прокси с пустым 
     // sendClaudeRequest: apiKey = reverse_proxy ? proxy_password : …; if (!apiKey) → 400 { error: true }
     assert.ok(g.every(c => c.body.proxy_password), 'пустой proxy_password ST отклоняет — его нельзя отправлять (а UI пишет «пусто, если пароль не нужен»)');
     assert.ok(!t.toasts.some(x => x.type === 'error' && /Ошибка бэкенда ST/.test(x.msg)), JSON.stringify(t.toasts));
+});
+
+// ---------------------------------------------------------------- 0.4.0: записи игрока
+test('M1. Память: после N ходов агента — запрос записей, записи в метаданных и в системном промпте хода', async () => {
+    t = setup();
+    t.s().memory = true; t.s().memoryEvery = 2; t.s().reactions = false;
+    await agentTurn(t); await botReply(t);
+    assert.equal(t.calls.filter(isMemoryCall).length, 0, 'после 1 хода записи ещё не обновляются');
+    const turnIdx = await agentTurn(t); await botReply(t);
+    await waitFor(() => t.c.chatMetadata.aip_memory, { msg: 'записи сохранены' });
+    const mem = t.c.chatMetadata.aip_memory;
+    assert.equal(mem.text, MEMORY_TEXT);
+    assert.equal(mem.upTo, turnIdx, 'учтено до хода агента, ответ бота не входит');
+    assert.equal(mem.chatId, 'chat-1');
+    const mc = t.calls.find(isMemoryCall);
+    assert.match(mc.body.messages[0].content, /СОСТОЯНИЕ:/);
+    assert.doesNotMatch(mc.body.messages[0].content, /трактирщица/, 'описание карты (знание ведущего) в записи не идёт');
+    // ход агента получает записи в системном промпте
+    await agentTurn(t);
+    const turn = t.calls.filter(isTurnCall).at(-1);
+    assert.match(turn.body.messages[0].content, /ЗАПИСИ «Боб»[\s\S]*три медяка/);
+    // выключили память — записи в ход не идут
+    t.s().memory = false;
+    await botReply(t); await agentTurn(t);
+    assert.doesNotMatch(t.calls.filter(isTurnCall).at(-1).body.messages[0].content, /ЗАПИСИ «Боб»/);
+});
+
+test('M2. Память: копия метаданных в ветке от более раннего места не используется', async () => {
+    t = setup();
+    t.s().memory = true;
+    t.c.chatMetadata.aip_memory = { chatId: 'other', text: 'будущее', upTo: 50, upToDate: 'нет-такой-даты', updated: 1 };
+    const s = t.aip.settings().s, sync = t.aip.getSync();
+    assert.doesNotMatch(t.aip.buildSystemPrompt(s, sync), /будущее/);
+    t.c.chatMetadata.aip_memory.chatId = 'chat-1';    // в своём чате удалённое сообщение — записи остаются, но помечены
+    assert.match(t.aip.buildSystemPrompt(s, sync), /будущее/);
+});
+
+test('O1. Переполнение: приветствие убирается, meta.overflow при невлезающем последнем сообщении', () => {
+    t = setup({ chat: longChat(6) });
+    const s = t.aip.settings().s, sync = t.aip.getSync();
+    t.s().profiles[0].contextSize = 1000; t.s().maxTokens = 100;
+    const msgs = t.aip.buildMessages(s, sync, 'x');
+    assert.equal(msgs.meta.included, 1, 'осталось только последнее сообщение');
+    assert.equal(msgs.meta.overflow, true);
+    assert.doesNotMatch(msgs[0].content, /Добро пожаловать/);
 });

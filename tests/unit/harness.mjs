@@ -96,7 +96,9 @@ const sysOf = c => String(c.body?.messages?.[0]?.content || '');
 const lastOf = c => String(c.body?.messages?.at?.(-1)?.content || '');
 export const isTestCall = c => isGenerate(c) && sysOf(c).startsWith('Отвечай одним словом');
 export const isReactionCall = c => isGenerate(c) && !isTestCall(c) && /об игре после ответа «/.test(lastOf(c));
-export const isTurnCall = c => isGenerate(c) && !isReactionCall(c) && !isTestCall(c);
+export const isMemoryCall = c => isGenerate(c) && /\[Обнови записи «/.test(lastOf(c));
+export const MEMORY_TEXT = 'СОСТОЯНИЕ: в таверне\nОБЕЩАНИЯ И ДОГОВОРЫ: должен Алисе три медяка';
+export const isTurnCall = c => isGenerate(c) && !isReactionCall(c) && !isTestCall(c) && !isMemoryCall(c);
 export const isSecretCall = (c, op) => c.url.endsWith(`/api/secrets/${op}`);
 
 /**
@@ -253,7 +255,7 @@ export function setup(opts = {}) {
             }
             case 'backends/chat-completions/generate': {
                 const call = { url: '/api/backends/chat-completions/generate', body };
-                const text = isReactionCall(call) ? REACTION_TEXT : isTestCall(call) ? 'готов' : turnReply;
+                const text = isReactionCall(call) ? REACTION_TEXT : isTestCall(call) ? 'готов' : isMemoryCall(call) ? MEMORY_TEXT : turnReply;
                 if (body.chat_completion_source === 'claude') {
                     // sendClaudeRequest: ключ — пароль прокси или секрет; пустой → 400 { error: true }
                     const apiKey = body.reverse_proxy ? body.proxy_password : readSecret('api_key_claude', body.secret_id);
