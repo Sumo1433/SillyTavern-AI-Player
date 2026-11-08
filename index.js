@@ -5,6 +5,7 @@
 // Ключи хранятся только в secrets ST (на сервере); все запросы идут через бэкенд ST.
 
 const MODULE = 'ai_player';
+const VERSION = '0.2.2';
 const CLAUDE_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'];
 const SOURCE = {
     openai: { source: 'custom', secret: 'api_key_custom', label: 'OpenAI-совместимый / реверс-прокси', defUrl: 'https://api.openai.com/v1' },
@@ -1085,6 +1086,47 @@ function openModal() {
 }
 function closeModal() { document.getElementById('aip_overlay').classList.remove('aip-open'); }
 
+// ---------- Диагностика (для телефона, где нет консоли браузера) ----------
+function diagnose() {
+    const lines = [`AI Player ${VERSION} · ${navigator.userAgent.match(/(Chrome|Firefox|Safari)\/[\d.]+/)?.[0] || navigator.userAgent.slice(0, 60)}`];
+    const css = getComputedStyle(document.documentElement).getPropertyValue('--aip-dur').trim();
+    lines.push(`style.css загружен: ${css ? 'да' : 'НЕТ'}`);
+    const probe = id => {
+        const n = document.getElementById(id);
+        if (!n) return `${id}: НЕТ в DOM`;
+        const cs = getComputedStyle(n), r = n.getBoundingClientRect();
+        return `${id}: в ${n.parentElement?.id || n.parentElement?.tagName} · class="${n.className}" · display=${cs.display} vis=${cs.visibility} op=${cs.opacity} z=${cs.zIndex} pos=${cs.position} · ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}×${Math.round(r.height)}`;
+    };
+    lines.push(probe('aip_play'), probe('aip_menu'));
+    const o = document.getElementById('aip_overlay');
+    const wasOpen = o?.classList.contains('aip-open');
+    if (o) o.classList.add('aip-open');                 // принудительно открыть и посмотреть, что получилось
+    lines.push(probe('aip_overlay'), probe('aip_modal'));
+    const top = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+    lines.push(`сверху в центре экрана: ${top ? `${top.tagName}#${top.id}.${String(top.className).slice(0, 40)}` : '—'}`);
+    if (o && !wasOpen) o.classList.remove('aip-open');
+    lines.push(probe('aip_thoughts'));
+    lines.push(`окно ${innerWidth}×${innerHeight} · чат: ${chatId() ? 'открыт' : 'нет'} · ошибок: ${errors.length}`);
+    for (const e of errors.slice(-3)) lines.push(`ошибка: ${e}`);
+    const text = lines.join('\n');
+    console.log('[AI Player] диагностика\n' + text);
+    const ta = document.getElementById('send_textarea');
+    if (ta && !ta.value.trim()) { ta.value = text; ta.dispatchEvent(new Event('input', { bubbles: true })); }
+    toastr.info('Отчёт вставлен в поле ввода — скопируйте его и пришлите разработчику. Не отправляйте в чат.', 'AI Player: диагностика', { timeOut: 10000 });
+}
+
+// перехват ошибок расширения — показываем уведомлением, т.к. на телефоне консоли не видно
+const errors = [];
+function reportError(err, where = '') {
+    const msg = `${where ? where + ': ' : ''}${err?.message || err}`;
+    errors.push(msg);
+    console.error('[AI Player]', where, err);
+    toastr.error(short(msg), 'AI Player — ошибка');
+}
+window.addEventListener('error', e => { if (String(e.filename || e.error?.stack || '').includes('AI-Player')) reportError(e.error || e.message, 'скрипт'); });
+window.addEventListener('unhandledrejection', e => { if (String(e.reason?.stack || '').includes('AI-Player')) reportError(e.reason, 'промис'); });
+const safe = (name, fn) => (...a) => { try { const r = fn(...a); if (r?.catch) r.catch(e => reportError(e, name)); return r; } catch (e) { reportError(e, name); } };
+
 // ---------- Кнопки ----------
 function addButtons() {
     const host = document.getElementById('rightSendForm') || document.getElementById('send_form');
@@ -1109,13 +1151,16 @@ function addButtons() {
             return it;
         };
         menu.append(
-            mk('aip_menu', 'fa-robot', 'AI Player — настройки', openModal),
-            mk('aip_menu_th', 'fa-comment-dots', 'AI Player — окно мыслей', toggleThoughts),
+            mk('aip_menu', 'fa-robot', 'AI Player — настройки', safe('настройки', openModal)),
+            mk('aip_menu_th', 'fa-comment-dots', 'AI Player — окно мыслей', safe('окно мыслей', toggleThoughts)),
+            mk('aip_menu_diag', 'fa-stethoscope', 'AI Player — диагностика', safe('диагностика', diagnose)),
         );
     }
 }
 
-jQuery(() => {
+jQuery(() => { try { initAll(); } catch (e) { reportError(e, 'запуск'); } });
+
+function initAll() {
     settings();
     applyMotion();
     buildModal();
@@ -1142,7 +1187,12 @@ jQuery(() => {
     if (ev.MORE_MESSAGES_LOADED) c.eventSource.on(ev.MORE_MESSAGES_LOADED, renderAllBadges);
     renderThoughts();
     renderAllBadges();
-    console.log('[AI Player] 0.2.1 загружен');
-});
+    console.log(`[AI Player] ${VERSION} загружен`);
+    const { s, save } = settings();
+    if (s.lastVersion !== VERSION) {     // один раз после обновления — подтверждение, что загрузилась новая версия
+        s.lastVersion = VERSION; save();
+        toastr.success(`Версия ${VERSION} загружена. Меню-палочка → AI Player.`, 'AI Player', { timeOut: 5000 });
+    }
+}
 
 
