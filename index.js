@@ -5,7 +5,7 @@
 // Ключи хранятся только в secrets ST (на сервере); все запросы идут через бэкенд ST.
 
 const MODULE = 'ai_player';
-const VERSION = '0.2.6';
+const VERSION = '0.2.7';
 const CLAUDE_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'];
 const SOURCE = {
     openai: { source: 'custom', secret: 'api_key_custom', label: 'OpenAI-совместимый / реверс-прокси', defUrl: 'https://api.openai.com/v1' },
@@ -598,22 +598,29 @@ function appendThought(e) {
     node.classList.add('aip-new');
     node.addEventListener('animationend', () => node.classList.remove('aip-new'), { once: true });
     body.appendChild(node);
-    body.scrollTop = body.scrollHeight;
     updateThoughtsCount();
     if (settings().s.thoughtsHidden) toastr.info('💭 Новый вывод игрока', 'AI Player', { timeOut: 2500 });
     else showThoughts(true);
+    scrollThoughtsToEnd();
+}
+
+// Прокрутка к последней мысли — после отрисовки: пока окно скрыто/пусто, scrollTop не применяется
+function scrollThoughtsToEnd() {
+    const body = document.querySelector('#aip_thoughts .aip-th-body');
+    if (!body) return;
+    requestAnimationFrame(() => requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; }));
 }
 function renderThoughts() {
     const body = document.querySelector('#aip_thoughts .aip-th-body');
     if (!body) return;
     body.replaceChildren(...(ctx().chatMetadata?.aip_log || []).map(thoughtNode));
-    body.scrollTop = body.scrollHeight;
     updateThoughtsCount();
+    scrollThoughtsToEnd();
 }
 function showThoughts(v) {
     const el = document.getElementById('aip_thoughts');
     el.classList.toggle('aip-open', v);
-    if (v) clampIntoView(el);
+    if (v) { clampIntoView(el); scrollThoughtsToEnd(); }
 }
 function clampIntoView(el) {
     if (!el.style.left) return;
@@ -635,6 +642,7 @@ function buildThoughts() {
         s.thoughtsMin = !s.thoughtsMin; save();
         el.classList.toggle('aip-min', s.thoughtsMin);
         clampIntoView(el);
+        if (!s.thoughtsMin) scrollThoughtsToEnd();
     };
     el.querySelector('[data-act="close"]').onclick = () => {
         showThoughts(false);
