@@ -151,6 +151,31 @@ test('3c. Если последним стоит ход игрока — нап�
     assert.match(msgs.at(-1).content, /^\[Ход «Боб»/);
 });
 
+test('3f. Свой промпт: глубина 0 — в конце перед напоминанием; глубина N — перед последними N сообщениями; плейсхолдеры', () => {
+    t = setup();
+    const { aip } = t;
+    const s = aip.settings().s;
+    s.customPrompt = '{player} ранен в левую руку';
+    s.customRole = 'system';
+    s.customDepth = 0;
+    let msgs = aip.buildMessages(s, aip.getSync(), 'sys');
+    let i = msgs.findIndex(m => m.content === 'Боб ранен в левую руку');
+    assert.ok(i > 0, 'свой промпт вставлен, плейсхолдер {player} подставлен');
+    assert.equal(msgs[i].role, 'system');
+    assert.equal(i, msgs.length - 2, 'глубина 0: сразу перед финальным напоминанием');
+    assert.match(msgs.at(-1).content, /^\[Ход «Боб»/);
+    // глубина = число сообщений истории → в самом начале истории
+    const histLen = t.c.chat.filter(m => !m.is_system && (m.mes || '').trim()).length;
+    s.customDepth = histLen;
+    msgs = aip.buildMessages(s, aip.getSync(), 'sys');
+    i = msgs.findIndex(m => m.content === 'Боб ранен в левую руку');
+    assert.ok(i <= 1, `глубина ${histLen}: в начале истории (индекс ${i})`);
+    // пустой — не внедряется
+    s.customPrompt = '   ';
+    msgs = aip.buildMessages(s, aip.getSync(), 'sys');
+    assert.ok(!msgs.some(m => /ранен/.test(m.content)));
+});
+
 test('3d. Очистка ответа при ходе: <think>, [[OOC]], префикс своего имени, реплика за бота', async () => {
     t = setup({ turnReply: '<think>план хода</think>**Боб**: *кивает* «Привет»\n[[OOC]] заметка для автора [[/OOC]]\nАлиса: «Я тоже рада»' });
     await agentTurn(t);

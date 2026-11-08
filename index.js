@@ -6,7 +6,7 @@
 // запущена); все запросы идут через бэкенд ST.
 
 const MODULE = 'ai_player';
-const VERSION = '0.3.2';
+const VERSION = '0.3.3';
 // ID из списка SillyTavern 1.19 + актуальные
 const CLAUDE_MODELS = ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5-5', 'claude-sonnet-5', 'claude-haiku-5-5'];
 const SOURCE = {
@@ -30,12 +30,15 @@ const DEFAULTS = {
     thoughtsHidden: false,
     thoughtsPos: null,
     prompts: { system: '', turn: '', reaction: '' },   // пусто = стандартный промпт
+    customPrompt: '',          // свой промпт, внедряемый в историю
+    customDepth: 0,            // глубина внедрения: 0 — в конце, N — перед последними N сообщениями
+    customRole: 'system',      // от чьего имени: system | user
     motion: true,              // анимации интерфейса
     uiTab: 'conn',
     thoughtsMin: false,
 };
 const PROFILE_FIELDS = ['provider', 'url', 'model', 'temperature', 'contextSize', 'proxyPassword'];
-const GLOBAL_FIELDS = ['maxTokens', 'contextMessages', 'minWords', 'maxWords', 'knowledge', 'extraInstructions', 'roleOverride'];
+const GLOBAL_FIELDS = ['maxTokens', 'contextMessages', 'minWords', 'maxWords', 'knowledge', 'extraInstructions', 'roleOverride', 'customPrompt', 'customDepth', 'customRole'];
 const GLOBAL_CHECKS = ['autoSend', 'reactions', 'sendTemperature', 'motion'];
 const applyMotion = () => document.body.classList.toggle('aip-nomotion', !settings().s.motion);
 const REQUEST_TIMEOUT = 180000;
@@ -426,6 +429,16 @@ function renderPrompt(s, sync, key) {
 
 const buildSystemPrompt = (s, sync) => renderPrompt(s, sync, 'system');
 
+// Свой промпт пользователя (вкладка «Промпты» → «Свой промпт»): те же плейсхолдеры и макросы ST
+function renderCustomPrompt(s, sync) {
+    const text = String(s.customPrompt || '').trim();
+    if (!text) return '';
+    const vars = promptVars(s, sync);
+    let t = text.replace(/(?<!\{)\{(\w+)\}(?!\})/g, (m, k) => (k in vars ? String(vars[k]) : m));
+    try { t = ctx().substituteParams?.(t) ?? t; } catch { /* без макросов ST */ }
+    return t.trim();
+}
+
 // Грубая оценка токенов (для обрезки); точный подсчёт — через токенайзер ST в шкале контекста
 const estTokens = t => Math.ceil(String(t || '').length / 3.2);
 const ctxLimit = p => num(p?.contextSize, 1000, 2000000, 32000);
@@ -439,7 +452,8 @@ function buildMessages(s, sync, system = '') {
     const first = all.length > 1 ? all[0] : null;          // приветствие держим всегда
     let tail = first ? all.slice(Math.max(1, all.length - N)) : all.slice(-N);
     // обрезка по бюджету токенов: лимит модели − ответ − системный промпт − запас
-    const budget = ctxLimit(p) - num(s.maxTokens, 100, 16000, 1200) - estTokens(system) - estTokens(getPrompt(s, 'turn')) - 600;
+    const custom = renderCustomPrompt(s, sync);
+    const budget = ctxLimit(p) - num(s.maxTokens, 100, 16000, 1200) - estTokens(system) - estTokens(getPrompt(s, 'turn')) - estTokens(custom) - 600;
     const cost = arr => arr.reduce((a, m) => a + estTokens(m.mes) + 8, 0) + (first ? estTokens(first.mes) : 0);
     let trimmed = Math.max(0, all.length - (first ? 1 : 0) - tail.length);
     while (tail.length > 1 && cost(tail) > budget) { tail = tail.slice(1); trimmed++; }
@@ -450,11 +464,18 @@ function buildMessages(s, sync, system = '') {
         if (i === 1 && gap) raw.push({ role: 'user', content: '[…часть истории пропущена…]' });
         raw.push(m.is_user ? { role: 'assistant', content: m.mes } : { role: 'user', content: `${m.name}: ${m.mes}` });
     });
+    // свой промпт — внедряется на заданную глубину, как Author's Note в ST:
+    // 0 — в самом конце (перед напоминанием о ходе), N — перед последними N сообщениями истории
+    if (custom) {
+        const depth = num(s.customDepth, 0, 1000, 0);
+        const at = Math.max(0, raw.length - depth);
+        raw.splice(at, 0, { role: s.customRole === 'user' ? 'user' : 'system', content: custom, custom: true });
+    }
     const msgs = [];
     for (const m of raw) {
         const last = msgs[msgs.length - 1];
-        if (last && last.role === m.role) last.content += `\n\n${m.content}`;
-        else msgs.push({ ...m });
+        if (last && last.role === m.role && m.role !== 'system') last.content += `\n\n${m.content}`;
+        else msgs.push({ role: m.role, content: m.content });
     }
     if (!msgs.length || msgs[0].role !== 'user') {
         msgs.unshift({ role: 'user', content: `[Начало ролевой игры. Сценарий: ${sync.card.scenario || '—'}]` });
@@ -1029,7 +1050,7 @@ function matchData() {
     return {
         format: 'ai-player-match/2', exported: new Date().toISOString(), chatId: chatId(),
         character: c.name2, persona: c.name1,
-        settings: { maxTokens: s.maxTokens, contextMessages: s.contextMessages, minWords: s.minWords, maxWords: s.maxWords, knowledge: s.knowledge, extraInstructions: s.extraInstructions, roleOverride: s.roleOverride },
+        settings: { maxTokens: s.maxTokens, contextMessages: s.contextMessages, minWords: s.minWords, maxWords: s.maxWords, knowledge: s.knowledge, extraInstructions: s.extraInstructions, roleOverride: s.roleOverride, customPrompt: s.customPrompt, customDepth: s.customDepth, customRole: s.customRole },
         turns,   // ключей и secretId здесь нет
     };
 }
@@ -1154,6 +1175,15 @@ function buildModal() {
               <button type="button" class="menu_button" id="aip_presetApply"><i class="fa-solid fa-wand-magic-sparkles"></i> Применить</button>
             </div>
             <div class="aip-note">Пресет заменяет все три промпта. Удобно сравнивать модели при разных стилях игрока; свои правки потом можно вернуть только вручную.</div>
+          </div>
+          <div class="aip-card">
+            <div class="aip-card-title">Свой промпт (внедрение в историю)</div>
+            <textarea id="aip_customPrompt" spellcheck="false" placeholder="Например: «{player} сейчас ранен в левую руку и не может держать меч» или любые свои указания игроку. Работают плейсхолдеры и макросы ST."></textarea>
+            <div class="aip-row">
+              <div><label>Глубина внедрения</label><input id="aip_customDepth" type="number" min="0" max="1000" step="1"></div>
+              <div><label>От чьего имени</label><select id="aip_customRole"><option value="system">system (инструкция)</option><option value="user">user (как реплика сцены)</option></select></div>
+            </div>
+            <div class="aip-note">Как Author's Note в SillyTavern: <b>0</b> — в самом конце, прямо перед ходом (сильнее всего влияет); <b>N</b> — перед последними N сообщениями истории (мягче, «в фоне»). Действует на ходы игрока; пустое поле — не внедряется.</div>
           </div>
           <div class="aip-card">
             <select id="aip_promptKey">${Object.entries(PROMPT_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
