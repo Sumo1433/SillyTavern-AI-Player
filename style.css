@@ -182,6 +182,14 @@
 .aip-mono { font-family: var(--monoFontFamily, ui-monospace, monospace); max-height: 300px; }
 .aip-hidden { display: none !important; }
 
+/* добавление ключа */
+.aip-addkey { margin-top: 8px; }
+.aip-addkey > summary { cursor: pointer; font-size: .85em; color: var(--aip-accent); list-style: none; padding: 4px 0; user-select: none; }
+.aip-addkey > summary::-webkit-details-marker { display: none; }
+.aip-addkey[open] > summary { margin-bottom: 6px; }
+.aip-addkey .aip-keyrow { flex-wrap: wrap; }
+.aip-addkey .aip-keyrow > input { flex: 1 1 160px; }
+
 /* подвал */
 .aip-foot { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--aip-border); background: var(--aip-surface); }
 .aip-status { flex: 1; min-width: 0; font-size: .82em; color: var(--aip-muted); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }

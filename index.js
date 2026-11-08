@@ -5,7 +5,7 @@
 // Ключи хранятся только в secrets ST (на сервере); все запросы идут через бэкенд ST.
 
 const MODULE = 'ai_player';
-const VERSION = '0.2.3';
+const VERSION = '0.2.4';
 const CLAUDE_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'];
 const SOURCE = {
     openai: { source: 'custom', secret: 'api_key_custom', label: 'OpenAI-совместимый / реверс-прокси', defUrl: 'https://api.openai.com/v1' },
@@ -98,36 +98,34 @@ async function profileHasKey(p) {
         return p.secretId ? list.some(x => x.id === p.secretId) : list.length > 0;
     } catch { return false; }
 }
-// Пишет ключ отдельным значением с меткой профиля и возвращает основной таверне её прежний активный ключ.
-async function saveProfileKey(p, value) {
+// Добавляет ключ ОТДЕЛЬНЫМ значением (старые ключи остаются в списке), выбирает его в профиле
+// и возвращает основной таверне её прежний активный ключ.
+async function saveProfileKey(p, value, label) {
     const key = srcOf(p).secret;
-    const state = await secretState();
-    const before = slotList(state, key);
-    if (before.some(x => x.legacy) && !confirm('Эта версия SillyTavern хранит один ключ на провайдера. Новый ключ заменит ключ основной таверны. Продолжить?')) return false;
+    const before = slotList(await secretState(), key);
+    if (before.some(x => x.legacy) && !confirm('Эта версия SillyTavern хранит один ключ на провайдера — несколько ключей недоступны. Новый ключ заменит ключ основной таверны. Продолжить?')) return false;
     const prevActive = before.find(x => x.active)?.id;
-    const r = await post('/api/secrets/write', { key, value, label: `AI Player: ${p.name}` });
+    const r = await post('/api/secrets/write', { key, value, label: label || `AI Player: ${p.name}` });
     if (!r.ok) throw new Error(`Не удалось сохранить ключ (HTTP ${r.status})`);
     const j = await r.json().catch(() => ({}));
-    if (j?.id) {
-        const old = p.secretId;
-        p.secretId = j.id;
-        if (prevActive && prevActive !== j.id) await post('/api/secrets/rotate', { key, id: prevActive }).catch(() => {});
-        if (old && old !== j.id && before.some(x => x.id === old)) await post('/api/secrets/delete', { key, id: old }).catch(() => {});
-    } else {
-        p.secretId = null;
-    }
+    p.secretId = j?.id || null;
+    if (j?.id && prevActive && prevActive !== j.id) await post('/api/secrets/rotate', { key, id: prevActive }).catch(() => {});
     settings().save();
     return true;
 }
+// Удаляет выбранный в профиле ключ из хранилища ST
 async function deleteProfileKey(p) {
     const key = srcOf(p).secret;
     if (p.secretId) {
-        await post('/api/secrets/delete', { key, id: p.secretId });
-        p.secretId = null;
+        const item = slotList(await secretState(), key).find(x => x.id === p.secretId);
+        if (!confirm(`Удалить ключ «${item?.label || 'без названия'}» из хранилища SillyTavern? Его потеряют все профили, где он выбран.`)) return;
+        const r = await post('/api/secrets/delete', { key, id: p.secretId });
+        if (!r.ok) throw new Error(`Не удалось удалить ключ (HTTP ${r.status})`);
+        for (const x of settings().s.profiles) if (x.secretId === p.secretId) x.secretId = null;
         settings().save();
         return;
     }
-    if (!confirm('У профиля нет собственного ключа — он использует общий ключ таверны. Удалить активный ключ таверны?')) return;
+    if (!confirm('Выбран общий ключ таверны. Удалить активный ключ основной таверны?')) return;
     const r = await post('/api/secrets/delete', { key });
     if (!r.ok) throw new Error(`Не удалось удалить ключ (HTTP ${r.status})`);
 }
@@ -773,7 +771,15 @@ function buildModal() {
             <select id="aip_p_provider"><option value="openai">${SOURCE.openai.label}</option><option value="anthropic">${SOURCE.anthropic.label}</option></select>
             <div id="aip_urlWrap"><label>URL — база API или адрес реверс-прокси</label><input id="aip_p_url" type="text" placeholder="https://api.openai.com/v1"></div>
             <label>Ключ</label>
-            <div class="aip-row aip-keyrow"><input id="aip_keyInput" type="password" autocomplete="new-password" placeholder="вставьте ключ"><button type="button" class="menu_button" id="aip_keySave"><i class="fa-solid fa-lock"></i> Сохранить</button><button type="button" class="menu_button aip-sq" id="aip_keyDel" title="Удалить ключ профиля"><i class="fa-solid fa-key"></i><i class="fa-solid fa-xmark aip-mini"></i></button></div>
+            <div class="aip-row"><select id="aip_keySelect" title="Какой ключ использует этот профиль"></select><button type="button" class="menu_button aip-sq" id="aip_keyDel" title="Удалить выбранный ключ из хранилища"><i class="fa-solid fa-trash-can"></i></button></div>
+            <details class="aip-addkey" id="aip_addKey">
+              <summary><i class="fa-solid fa-plus"></i> Добавить ключ</summary>
+              <div class="aip-row aip-keyrow">
+                <input id="aip_keyLabel" type="text" placeholder="название, напр. «Kimi основной»">
+                <input id="aip_keyInput" type="password" autocomplete="new-password" placeholder="ключ">
+                <button type="button" class="menu_button" id="aip_keySave"><i class="fa-solid fa-lock"></i> Сохранить</button>
+              </div>
+            </details>
             <div class="aip-note" id="aip_keyState">…</div>
           </div>
 
@@ -941,14 +947,25 @@ function buildModal() {
 
     // ключ
     $('#aip_keySave').onclick = async () => {
-        const inp = $('#aip_keyInput');
+        const inp = $('#aip_keyInput'), lab = $('#aip_keyLabel');
         const val = inp.value.trim();
         if (!val) { toastr.warning('Введите ключ'); return; }
         try {
-            if (await saveProfileKey(activeProfile(), val)) { inp.value = ''; toastr.success('Ключ сохранён в хранилище SillyTavern'); }
+            if (await saveProfileKey(activeProfile(), val, lab.value.trim())) {
+                inp.value = ''; lab.value = '';
+                $('#aip_addKey').open = false;
+                toastr.success('Ключ добавлен в хранилище SillyTavern и выбран в профиле');
+            }
         } catch (e) { toastr.error(short(e.message)); }
         refreshKeyState();
     };
+    $('#aip_keySelect').addEventListener('change', e => {
+        const p = activeProfile();
+        p.secretId = e.target.value || null;
+        settings().save();
+        refreshKeyState();
+        scheduleMeter();
+    });
     $('#aip_keyDel').onclick = async () => {
         try { await deleteProfileKey(activeProfile()); } catch (e) { toastr.error(short(e.message)); }
         refreshKeyState();
@@ -1041,19 +1058,30 @@ function updatePromptState() {
 async function refreshKeyState() {
     const p = activeProfile();
     const el = document.getElementById('aip_keyState');
-    let has = false, legacy = false;
+    const sel = document.getElementById('aip_keySelect');
+    let has = false, legacy = false, list = [];
     try {
-        const list = slotList(await secretState(), srcOf(p).secret);
+        list = slotList(await secretState(), srcOf(p).secret);
         legacy = list.some(x => x.legacy);
-        has = p.secretId ? list.some(x => x.id === p.secretId) : list.length > 0;
+        if (p.secretId && !list.some(x => x.id === p.secretId)) { p.secretId = null; settings().save(); }  // ключ удалили
+        has = p.secretId ? true : list.length > 0;
     } catch { /* нет доступа */ }
+    // список ключей: значения приходят от ST уже замаскированными (***abc), сам ключ в браузер не попадает
+    const opt = (value, text) => Object.assign(document.createElement('option'), { value, textContent: text });
+    sel.replaceChildren(
+        opt('', list.length ? 'Общий ключ таверны (активный в ST)' : '— ключей нет, добавьте ниже —'),
+        ...list.filter(x => x.id).map(x => opt(x.id, `${x.label || 'без названия'}${x.value ? ` · ${String(x.value).slice(-6)}` : ''}${x.active ? ' · активен в ST' : ''}`)),
+    );
+    sel.value = p.secretId || '';
+    sel.disabled = legacy;
+    if (!list.length) document.getElementById('aip_addKey').open = true;
     updateChip(!has ? 'none' : p.secretId ? 'ok' : 'shared');
     el.dataset.state = !has ? 'none' : p.secretId ? 'ok' : 'shared';
     el.textContent = p.secretId && has
-        ? '🔒 У профиля свой ключ в хранилище SillyTavern (на сервере). В браузер и настройки он не попадает; основной ключ таверны не затронут.'
+        ? `🔒 Выбран свой ключ из хранилища SillyTavern (всего ключей: ${list.length}). Ключи лежат на сервере, в браузер и настройки не попадают; основной ключ таверны не меняется.`
         : has
-            ? `🔑 Используется общий ключ таверны (${srcOf(p).label}).${legacy ? ' Эта версия ST хранит один ключ на провайдера.' : ' Сохраните свой ключ, чтобы профиль не зависел от основной таверны.'}`
-            : '⚠ Ключа нет — вставьте и нажмите «Сохранить».';
+            ? `🔑 Используется общий ключ таверны (${srcOf(p).label}).${legacy ? ' Эта версия ST хранит один ключ на провайдера.' : ' Выберите или добавьте свой ключ, чтобы профиль не зависел от основной таверны.'}`
+            : '⚠ Ключа нет — нажмите «Добавить ключ».';
 }
 
 async function refreshSync() {
