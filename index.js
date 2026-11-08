@@ -5,7 +5,7 @@
 // Ключи хранятся только в secrets ST (на сервере); все запросы идут через бэкенд ST.
 
 const MODULE = 'ai_player';
-const VERSION = '0.2.5';
+const VERSION = '0.2.6';
 const CLAUDE_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'];
 const SOURCE = {
     openai: { source: 'custom', secret: 'api_key_custom', label: 'OpenAI-совместимый / реверс-прокси', defUrl: 'https://api.openai.com/v1' },
@@ -98,6 +98,11 @@ async function profileHasKey(p) {
         return p.secretId ? list.some(x => x.id === p.secretId) : list.length > 0;
     } catch { return false; }
 }
+// Ключи расширения помечаются меткой «AI Player …», чтобы не смешивать их с ключами самой таверны
+const AIP_LABEL = 'AI Player';
+const isAipKey = x => /^AI Player\b/.test(x?.label || '');
+const keyName = x => (x?.label || 'без названия').replace(/^AI Player\s*[:·-]?\s*/, '') || 'без названия';
+
 // Добавляет ключ ОТДЕЛЬНЫМ значением (старые ключи остаются в списке), выбирает его в профиле
 // и возвращает основной таверне её прежний активный ключ.
 async function saveProfileKey(p, value, label) {
@@ -105,7 +110,7 @@ async function saveProfileKey(p, value, label) {
     const before = slotList(await secretState(), key);
     if (before.some(x => x.legacy) && !confirm('Эта версия SillyTavern хранит один ключ на провайдера — несколько ключей недоступны. Новый ключ заменит ключ основной таверны. Продолжить?')) return false;
     const prevActive = before.find(x => x.active)?.id;
-    const r = await post('/api/secrets/write', { key, value, label: label || `AI Player: ${p.name}` });
+    const r = await post('/api/secrets/write', { key, value, label: `${AIP_LABEL} · ${label || p.name}` });
     if (!r.ok) throw new Error(`Не удалось сохранить ключ (HTTP ${r.status})`);
     const j = await r.json().catch(() => ({}));
     p.secretId = j?.id || null;
@@ -118,7 +123,7 @@ async function deleteProfileKey(p) {
     const key = srcOf(p).secret;
     if (p.secretId) {
         const item = slotList(await secretState(), key).find(x => x.id === p.secretId);
-        if (!confirm(`Удалить ключ «${item?.label || 'без названия'}» из хранилища SillyTavern? Его потеряют все профили, где он выбран.`)) return;
+        if (!confirm(`Удалить ключ «${keyName(item)}» из хранилища SillyTavern? Его потеряют все профили, где он выбран.`)) return;
         const r = await post('/api/secrets/delete', { key, id: p.secretId });
         if (!r.ok) throw new Error(`Не удалось удалить ключ (HTTP ${r.status})`);
         for (const x of settings().s.profiles) if (x.secretId === p.secretId) x.secretId = null;
@@ -961,12 +966,14 @@ function buildModal() {
     };
     $('#aip_keySelect').addEventListener('change', e => {
         const p = activeProfile();
+        if (e.target.value === '__none') { $('#aip_addKey').open = true; return; }
         p.secretId = e.target.value || null;
         settings().save();
         refreshKeyState();
         scheduleMeter();
     });
     $('#aip_keyDel').onclick = async () => {
+        if ($('#aip_keySelect').value === '__none') { toastr.info('Удалять нечего — ключей расширения нет'); return; }
         try { await deleteProfileKey(activeProfile()); } catch (e) { toastr.error(short(e.message)); }
         refreshKeyState();
     };
@@ -1068,19 +1075,22 @@ async function refreshKeyState() {
     } catch { /* нет доступа */ }
     // список ключей: значения приходят от ST уже замаскированными (***abc), сам ключ в браузер не попадает
     const opt = (value, text) => Object.assign(document.createElement('option'), { value, textContent: text });
-    sel.replaceChildren(
-        opt('', list.length ? 'Общий ключ таверны (активный в ST)' : '— ключей нет, добавьте ниже —'),
-        ...list.filter(x => x.id).map(x => opt(x.id, `${x.label || 'без названия'}${x.value ? ` · ${String(x.value).slice(-6)}` : ''}${x.active ? ' · активен в ST' : ''}`)),
-    );
-    sel.value = p.secretId || '';
+    // показываем только ключи, добавленные через расширение (+ выбранный, если он вдруг чужой)
+    const mine = list.filter(x => x.id && (isAipKey(x) || x.id === p.secretId));
+    const tavern = list.some(x => !isAipKey(x));
+    const items = mine.map(x => opt(x.id, `🔑 ${keyName(x)}${x.value ? ` · …${String(x.value).slice(-4)}` : ''}`));
+    if (!items.length) items.push(opt('__none', '— ключей расширения нет, добавьте ниже —'));
+    if (tavern || !p.secretId) items.push(opt('', '↪ Ключ из панели API таверны'));
+    sel.replaceChildren(...items);
+    sel.value = p.secretId || (mine.length ? '' : '__none');
+    if (!sel.value) sel.value = '';
     sel.disabled = legacy;
-    if (!list.length) document.getElementById('aip_addKey').open = true;
-    updateChip(!has ? 'none' : p.secretId ? 'ok' : 'shared');
+    if (!mine.length) document.getElementById('aip_addKey').open = true;    updateChip(!has ? 'none' : p.secretId ? 'ok' : 'shared');
     el.dataset.state = !has ? 'none' : p.secretId ? 'ok' : 'shared';
     el.textContent = p.secretId && has
-        ? `🔒 Выбран свой ключ из хранилища SillyTavern (всего ключей: ${list.length}). Ключи лежат на сервере, в браузер и настройки не попадают; основной ключ таверны не меняется.`
+        ? `🔒 Выбран ключ расширения (ключей расширения: ${mine.length}). Ключи хранятся на сервере SillyTavern, в браузер и настройки не попадают. Ключи из панели API таверны здесь не показываются.`
         : has
-            ? `🔑 Используется общий ключ таверны (${srcOf(p).label}).${legacy ? ' Эта версия ST хранит один ключ на провайдера.' : ' Выберите или добавьте свой ключ, чтобы профиль не зависел от основной таверны.'}`
+            ? `↪ Используется ключ из панели API таверны (${srcOf(p).label}).${legacy ? ' Эта версия ST хранит один ключ на провайдера.' : ' Чтобы не путаться, добавьте ключ расширения.'}`
             : '⚠ Ключа нет — нажмите «Добавить ключ».';
 }
 
