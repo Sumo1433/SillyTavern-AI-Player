@@ -2,14 +2,17 @@
 // Агент играет за выбранную персону {{user}} против бота таверны. Работает только по кнопке ▶.
 // Цикл: ▶ → агент пишет ход → ход уходит в чат → бот отвечает → агент читает ответ и пишет
 // короткий вывод в окно 💭 (в чат не попадает).
-// Ключи хранятся только в secrets ST (на сервере); все запросы идут через бэкенд ST.
+// Ключи хранятся в хранилище ключей SillyTavern на устройстве пользователя (secrets.json);
+// все запросы идут через бэкенд ST.
 
 const MODULE = 'ai_player';
-const VERSION = '0.2.8';
-const CLAUDE_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'];
+const VERSION = '0.3.0';
+// ID из списка SillyTavern 1.19 + актуальные
+const CLAUDE_MODELS = ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5-5', 'claude-sonnet-5', 'claude-haiku-5-5'];
 const SOURCE = {
-    openai: { source: 'custom', secret: 'api_key_custom', label: 'OpenAI-совместимый / реверс-прокси', defUrl: 'https://api.openai.com/v1' },
+    openai: { source: 'custom', secret: 'api_key_custom', label: 'OpenAI-совместимый / реверс-прокси (формат OpenAI)', defUrl: 'https://api.openai.com/v1' },
     anthropic: { source: 'claude', secret: 'api_key_claude', label: 'Anthropic (Claude, официальный API)', defUrl: '' },
+    claude_proxy: { source: 'claude', secret: null, label: 'Claude через реверс-прокси (формат Anthropic)', defUrl: '', proxy: true },
 };
 const DEFAULTS = {
     profiles: [],
@@ -31,7 +34,7 @@ const DEFAULTS = {
     uiTab: 'conn',
     thoughtsMin: false,
 };
-const PROFILE_FIELDS = ['provider', 'url', 'model', 'temperature', 'contextSize'];
+const PROFILE_FIELDS = ['provider', 'url', 'model', 'temperature', 'contextSize', 'proxyPassword'];
 const GLOBAL_FIELDS = ['maxTokens', 'contextMessages', 'minWords', 'maxWords', 'knowledge', 'extraInstructions', 'roleOverride'];
 const GLOBAL_CHECKS = ['autoSend', 'reactions', 'sendTemperature', 'motion'];
 const applyMotion = () => document.body.classList.toggle('aip-nomotion', !settings().s.motion);
@@ -48,6 +51,7 @@ const chatId = () => { try { return ctx().getCurrentChatId?.() ?? null; } catch 
 let busy = false;
 let abortCtl = null;
 let pendingMeta = null;
+let reactCtl = null;          // запрос «мыслей» — отменяется при смене чата и выключении мыслей
 const reacted = new Set();
 
 // ---------- Настройки и профили ----------
@@ -57,6 +61,7 @@ function newProfile(name, from = {}) {
         name, provider: from.provider || 'openai',
         url: from.url ?? SOURCE.openai.defUrl, model: from.model || '',
         temperature: from.temperature ?? 0.9, contextSize: from.contextSize ?? 32000, secretId: null,
+        proxyPassword: from.proxyPassword || '',
     };
 }
 
@@ -85,7 +90,10 @@ const baseUrl = p => (p.url || '').trim().replace(/\/+$/, '').replace(/\/chat\/c
 async function secretState() {
     const r = await post('/api/secrets/read');
     if (!r.ok) throw new Error(`Не удалось прочитать состояние ключей (HTTP ${r.status})`);
-    return r.json();
+    const j = await r.json();
+    // при внутренней ошибке ST отвечает 200 и {} — это сбой, а не «ключей нет»
+    if (!j || typeof j !== 'object' || !('api_key_custom' in j)) throw new Error('Хранилище ключей SillyTavern недоступно');
+    return j;
 }
 function slotList(state, key) {
     const v = state?.[key];
@@ -93,6 +101,7 @@ function slotList(state, key) {
     return v ? [{ id: null, active: true, legacy: true }] : [];
 }
 async function profileHasKey(p) {
+    if (srcOf(p).proxy) return true;           // реверс-прокси Claude: пароль в профиле (может быть пустым)
     try {
         const list = slotList(await secretState(), srcOf(p).secret);
         return p.secretId ? list.some(x => x.id === p.secretId) : list.length > 0;
@@ -103,8 +112,12 @@ const AIP_LABEL = 'AI Player';
 const isAipKey = x => /^AI Player\b/.test(x?.label || '');
 const keyName = x => (x?.label || 'без названия').replace(/^AI Player\s*[:·-]?\s*/, '') || 'без названия';
 
-// Добавляет ключ ОТДЕЛЬНЫМ значением (старые ключи остаются в списке), выбирает его в профиле
-// и возвращает основной таверне её прежний активный ключ.
+const PLACEHOLDER_LABEL = 'Пусто — заглушка AI Player (ключ таверны не задан)';
+
+// Добавляет ключ ОТДЕЛЬНЫМ значением (старые ключи остаются в списке) и выбирает его в профиле.
+// ST всегда делает новый ключ активным для всей таверны — поэтому возвращаем таверне её прежний
+// активный ключ, а если его не было — ставим пустую заглушку, чтобы ключ расширения не ушёл
+// на адрес основного подключения таверны.
 async function saveProfileKey(p, value, label) {
     const key = srcOf(p).secret;
     const before = slotList(await secretState(), key);
@@ -114,7 +127,15 @@ async function saveProfileKey(p, value, label) {
     if (!r.ok) throw new Error(`Не удалось сохранить ключ (HTTP ${r.status})`);
     const j = await r.json().catch(() => ({}));
     p.secretId = j?.id || null;
-    if (j?.id && prevActive && prevActive !== j.id) await post('/api/secrets/rotate', { key, id: prevActive }).catch(() => {});
+    if (j?.id) {
+        if (prevActive && prevActive !== j.id) {
+            await post('/api/secrets/rotate', { key, id: prevActive }).catch(() => {});
+        } else if (!prevActive) {
+            const ph = before.find(x => x.label === PLACEHOLDER_LABEL);
+            if (ph) await post('/api/secrets/rotate', { key, id: ph.id }).catch(() => {});
+            else await post('/api/secrets/write', { key, value: '', label: PLACEHOLDER_LABEL }).catch(() => {});
+        }
+    }
     settings().save();
     return true;
 }
@@ -152,7 +173,7 @@ function getSync() {
             name: partners.join(', ') || g?.name || 'Группа',
             description: members.map(m => `— ${m.name}: ${sub(m.description)}`).join('\n'),
             personality: members.map(m => m.personality ? `— ${m.name}: ${sub(m.personality)}` : '').filter(Boolean).join('\n'),
-            scenario: sub(g?.chat_metadata?.scenario || members[0]?.scenario || ''),
+            scenario: sub(c.chatMetadata?.scenario || members[0]?.scenario || ''),   // переопределение сценария группы — в метаданных чата
         };
     } else {
         card = { name: c.name2 || 'Персонаж', description: sub(f.description), personality: sub(f.personality), scenario: sub(f.scenario) };
@@ -220,7 +241,7 @@ function promptVars(s, sync) {
     const [lo, hi] = wordRange(s);
     const them = isGroup ? `персонажей «${C}»` : `«${C}»`;
     return {
-        player: P, partner: C, them, them_cap: them,
+        player: P, partner: C, them, them_cap: `«${C}»`,
         partner_is: isGroup ? 'Персонажами' : 'Персонажем',
         partners_word: isGroup ? 'СОБЕСЕДНИКИ' : 'СОБЕСЕДНИК',
         persona: s.roleOverride || personaDesc || '(описание не задано — выстрой характер из хода игры и оставайся последовательным)',
@@ -236,7 +257,8 @@ function promptVars(s, sync) {
 
 function renderPrompt(s, sync, key) {
     const vars = promptVars(s, sync);
-    let t = getPrompt(s, key).replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
+    // {name} — плейсхолдеры расширения; {{name}} не трогаем — это макросы ST
+    let t = getPrompt(s, key).replace(/(?<!\{)\{(\w+)\}(?!\})/g, (m, k) => (k in vars ? String(vars[k]) : m));
     try { t = ctx().substituteParams?.(t) ?? t; } catch { /* без макросов ST */ }
     return t.replace(/\n{3,}/g, '\n\n').trim();
 }
@@ -344,30 +366,46 @@ function transcript(n = 6) {
 async function callModel(p, s, system, messages, { maxTokens, signal, stop } = {}) {
     const src = srcOf(p);
     if (!p.model) throw new Error('Не указана модель');
+    // отменили ещё до запроса (▶ повторно / смена чата) — не отправляем платный запрос
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(new DOMException('timeout', 'TimeoutError')), REQUEST_TIMEOUT);
     const onAbort = () => ctl.abort();
     signal?.addEventListener('abort', onAbort);
     try {
+        // reasoning-модели OpenAI (o-серия, gpt-5) не принимают max_tokens/stop/temperature;
+        // Claude 5 / Fable не принимают параметры сэмплинга. ST сам это правит только для своих
+        // источников openai/openrouter, а для custom передаёт тело как есть.
+        const reasoning = /(^|\/)(o\d|gpt-5)/i.test(p.model);
+        const noSampling = /claude-(fable|opus-5|sonnet-5|haiku-5)/i.test(p.model);
         const body = {
             chat_completion_source: src.source,
             model: p.model,
-            max_tokens: maxTokens ?? num(s.maxTokens, 100, 16000, 1200),
             messages: [{ role: 'system', content: system }, ...messages],
             stream: false,
         };
-        if (s.sendTemperature) {
+        const mt = maxTokens ?? num(s.maxTokens, 100, 16000, 1200);
+        if (src.source === 'custom' && reasoning) body.max_completion_tokens = mt;
+        else body.max_tokens = mt;
+        if (s.sendTemperature && !reasoning && !noSampling) {
             const t = num(p.temperature, 0, 2, 0.9);
             body.temperature = src.source === 'claude' ? Math.min(1, t) : t;
         }
-        if (stop?.length) body.stop = stop;
-        if (p.secretId) body.secret_id = p.secretId;
+        if (stop?.length && !reasoning) body.stop = stop.slice(0, 4);   // у OpenAI максимум 4 стоп-строки
         if (src.source === 'custom') {
             if (!baseUrl(p)) throw new Error('Не указан URL');
             body.custom_url = baseUrl(p);
+            if (p.secretId) body.secret_id = p.secretId;
         } else {
             body.use_sysprompt = true;          // иначе ST превратит system в user-сообщение
-            body.claude_use_sysprompt = true;   // (имя поля в старых версиях ST)
+            if (src.proxy) {
+                // как поле «Reverse Proxy» в самой ST: адрес + пароль прокси (хранится в настройках на устройстве)
+                if (!baseUrl(p)) throw new Error('Не указан адрес реверс-прокси');
+                body.reverse_proxy = baseUrl(p);
+                body.proxy_password = p.proxyPassword || '';
+            } else if (p.secretId) {
+                body.secret_id = p.secretId;
+            }
         }
         const r = await fetch('/api/backends/chat-completions/generate', {
             method: 'POST', signal: ctl.signal, headers: H(), body: JSON.stringify(body),
@@ -445,7 +483,12 @@ async function playTurn() {
         const p = activeProfile();
         if (isStBusy()) { toastr.warning('Таверна ещё генерирует — дождитесь окончания'); return; }
         if (!p.model) { toastr.warning('Укажите модель в окне AI Player'); openModal(); return; }
+        if (!chatId() || (ctx().characterId === undefined && !ctx().groupId)) {
+            // без открытого чата ST создал бы новый чат с Ассистентом и отправил ход туда
+            toastr.warning('Откройте чат с персонажем или группой'); return;
+        }
         if (!(await profileHasKey(p))) { toastr.warning('Сохраните API-ключ в окне AI Player'); openModal(); return; }
+        if (signal.aborted) return;
 
         const c0 = ctx();
         const visible = (c0.chat || []).filter(m => !m.is_system);
@@ -491,8 +534,10 @@ async function playTurn() {
             },
         };
         if (s.autoSend) {
+            const sendBtn = document.getElementById('send_but');
             if (isStBusy()) toastr.info('Таверна занята — ход оставлен в поле ввода');
-            else document.getElementById('send_but')?.click();
+            else if (sendBtn && getComputedStyle(sendBtn).display !== 'none') sendBtn.click();
+            else toastr.info('Основной API таверны не подключён — ход оставлен в поле ввода');
         }
     } catch (e) {
         if (e.name !== 'AbortError') { console.error('[AI Player]', e); toastr.error(`AI Player: ${short(e.message)}`); }
@@ -512,7 +557,7 @@ function onMessageSent(id) {
     m.extra = { ...(m.extra || {}), aip: { ...pendingMeta.meta, edited: m.mes.trim() !== pendingMeta.text.trim() } };
     pendingMeta = null;
     c.saveChat?.();
-    renderBadge(id);
+    // бейдж поставит USER_MESSAGE_RENDERED — MESSAGE_SENT приходит раньше отрисовки
 }
 
 // ---------- Вывод агента после ответа бота ----------
@@ -528,22 +573,27 @@ async function onBotMessage(id) {
     if (!pm?.is_user || !pm.extra?.aip) return;            // реагируем только на ответ на ход агента
 
     const id0 = chatId();
-    const key = `${id0}:${id}:${m.swipe_id ?? 0}`;
+    // в ключ входит время генерации: после «Перегенерировать» новый ответ приходит с тем же
+    // индексом и swipe_id 0, но с новым send_date/gen_finished
+    const key = `${id0}:${id}:${m.swipe_id ?? 0}:${m.send_date ?? ''}:${m.gen_finished ?? ''}`;
     if (reacted.has(key)) return;
     reacted.add(key);
 
     const p = findProfile(pm.extra.aip.profileId) || activeProfile();
     if (!p?.model) return;
     const sync = getSync();
+    reactCtl?.abort();
+    reactCtl = new AbortController();
+    const signal = reactCtl.signal;
     try {
         const res = await callModel(p, s, buildReactionPrompt(s, sync),
             [{ role: 'user', content: `Последние сообщения игры:\n\n${transcript(6)}\n\n[Дай вывод о последнем ответе «${m.name}».]` }],
-            { maxTokens: 500 });
-        if (chatId() !== id0) return;
+            { maxTokens: 500, signal });
+        if (chatId() !== id0 || signal.aborted) return;
         const text = String(res.text || '').replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '').trim();
         if (!text) return;
         const entry = {
-            mesId: id, swipeId: m.swipe_id ?? 0, bot: m.name,
+            mesId: id, swipeId: m.swipe_id ?? 0, sendDate: m.send_date ?? null, bot: m.name,
             playerModel: pm.extra.aip.model, botModel: m.extra?.model || '?', text, ts: Date.now(),
         };
         const meta = ctx().chatMetadata;
@@ -553,6 +603,8 @@ async function onBotMessage(id) {
         }
         appendThought(entry);
     } catch (e) {
+        reacted.delete(key);                          // неудачную реакцию можно получить повторно (свайпом/перегенерацией)
+        if (e.name === 'AbortError') return;
         console.warn('[AI Player] вывод не получен:', e);
         toastr.warning(`AI Player: вывод не получен — ${short(e.message)}`);
     }
@@ -597,7 +649,7 @@ function appendThought(e) {
     const panel = document.getElementById('aip_thoughts');
     const wasOpen = panel.classList.contains('aip-open') && !panel.classList.contains('aip-min') && !panel.classList.contains('aip-empty');
     // пользователь внизу (или окно было закрыто/пустое) → прокручиваем; листает старое → не мешаем
-    const atBottom = !wasOpen || body.scrollHeight - body.scrollTop - body.clientHeight < 40;
+    const atBottom = !wasOpen || thoughtsAtBottom(body);
     const node = thoughtNode(e);
     node.classList.add('aip-new');
     node.addEventListener('animationend', () => node.classList.remove('aip-new'), { once: true });
@@ -614,6 +666,7 @@ function thoughtsAtBottom(body) { return body.scrollHeight - body.scrollTop - bo
 function setReactions(on) {
     const { s, save } = settings();
     s.reactions = !!on; save();
+    if (!s.reactions) reactCtl?.abort();          // уже идущий запрос «мыслей» тоже отменяем
     const panel = document.getElementById('aip_thoughts');
     panel?.classList.toggle('aip-off', !s.reactions);
     const btn = panel?.querySelector('[data-act="power"]');
@@ -642,7 +695,9 @@ function renderThoughts() {
 }
 function showThoughts(v, scroll = true) {
     const el = document.getElementById('aip_thoughts');
+    if (!el) return;
     el.classList.toggle('aip-open', v);
+    if (!v) el.classList.remove('aip-has-new');   // иначе невидимая кнопка «Новая мысль» ловила бы нажатия
     if (v) { clampIntoView(el); if (scroll) scrollThoughtsToEnd(); }
 }
 function clampIntoView(el) {
@@ -702,6 +757,7 @@ function buildThoughts() {
             head.removeEventListener('pointermove', move);
             head.removeEventListener('pointerup', up);
             head.removeEventListener('pointercancel', up);
+            if (!el.style.left) return;                // просто касание без перетаскивания — позицию не трогаем
             const { s: st, save } = settings();
             st.thoughtsPos = { x: parseInt(el.style.left) || 0, y: parseInt(el.style.top) || 0 };
             save();
@@ -710,7 +766,6 @@ function buildThoughts() {
         head.addEventListener('pointerup', up);
         head.addEventListener('pointercancel', up);
     });
-    window.addEventListener('resize', () => clampIntoView(el));
 }
 
 // ---------- Подписи моделей в чате ----------
@@ -747,9 +802,11 @@ function matchData() {
         model: m.is_user ? (m.extra?.aip?.model ?? null) : (m.extra?.model ?? null),
         api: m.is_user ? (m.extra?.aip?.provider ?? null) : (m.extra?.api ?? null),
         player_meta: m.extra?.aip ?? null,
-        words: (m.mes.match(/\S+/g) || []).length, swipes: m.swipes?.length ?? 1,
-        text: m.mes,
-        reactions: log.filter(e => e.mesId === i).map(e => ({ swipe: e.swipeId, text: e.text })),
+        words: ((m.mes || '').match(/\S+/g) || []).length, swipes: m.swipes?.length ?? 1,
+        text: m.mes || '',
+        // сопоставляем по времени сообщения (индексы сдвигаются при удалении), старые записи — по индексу
+        reactions: log.filter(e => (e.sendDate != null ? (m.swipe_info || []).some(x => x?.send_date === e.sendDate) || e.sendDate === m.send_date : e.mesId === i))
+            .map(e => ({ swipe: e.swipeId, text: e.text })),
     }));
     return {
         format: 'ai-player-match/2', exported: new Date().toISOString(), chatId: chatId(),
@@ -812,8 +869,14 @@ function buildModal() {
           <div class="aip-card">
             <div class="aip-card-title">API</div>
             <label>Тип</label>
-            <select id="aip_p_provider"><option value="openai">${SOURCE.openai.label}</option><option value="anthropic">${SOURCE.anthropic.label}</option></select>
-            <div id="aip_urlWrap"><label>URL — база API или адрес реверс-прокси</label><input id="aip_p_url" type="text" placeholder="https://api.openai.com/v1"></div>
+            <select id="aip_p_provider">${Object.entries(SOURCE).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('')}</select>
+            <div id="aip_urlWrap"><label id="aip_urlLabel">URL — база API или адрес реверс-прокси</label><input id="aip_p_url" type="text" placeholder="https://api.openai.com/v1"></div>
+            <div id="aip_proxyWrap">
+              <label>Пароль прокси (если прокси его требует)</label>
+              <input id="aip_p_proxyPassword" type="password" autocomplete="new-password" placeholder="пусто, если пароль не нужен">
+              <div class="aip-note">🔐 Пароль сохраняется на вашем устройстве — в настройках SillyTavern (<code>settings.json</code>), так же как пароль прокси в самой таверне. Отправляется только на указанный реверс-прокси. Не передавайте никому <code>settings.json</code> и бэкапы папки <code>data</code>.</div>
+            </div>
+            <div id="aip_keyWrap">
             <label>Ключ</label>
             <div class="aip-row"><select id="aip_keySelect" title="Какой ключ использует этот профиль"></select><button type="button" class="menu_button aip-sq" id="aip_keyDel" title="Удалить выбранный ключ из хранилища"><i class="fa-solid fa-trash-can"></i></button></div>
             <details class="aip-addkey" id="aip_addKey">
@@ -825,6 +888,7 @@ function buildModal() {
               </div>
             </details>
             <div class="aip-note" id="aip_keyState">…</div>
+            </div>
           </div>
 
           <div class="aip-card">
@@ -905,7 +969,6 @@ function buildModal() {
     uiHost().appendChild(o);
     const $ = sel => o.querySelector(sel);
     o.addEventListener('mousedown', e => { if (e.target === o) closeModal(); });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape' && o.classList.contains('aip-open')) closeModal(); });
     $('#aip_close').onclick = closeModal;
 
     // любая правка настроек → пересчёт шкалы контекста
@@ -929,8 +992,14 @@ function buildModal() {
         const { s, save } = settings();
         if (s.profiles.length < 2) { toastr.warning('Нельзя удалить единственный профиль'); return; }
         const p = activeProfile();
-        if (!confirm(`Удалить профиль «${p.name}»${p.secretId ? ' и его ключ' : ''}?`)) return;
-        if (p.secretId) await post('/api/secrets/delete', { key: srcOf(p).secret, id: p.secretId }).catch(() => {});
+        // ключ удаляем, только если он больше ни в одном профиле не выбран
+        const shared = p.secretId && s.profiles.some(x => x !== p && x.secretId === p.secretId);
+        const dropKey = p.secretId && !shared;
+        if (!confirm(`Удалить профиль «${p.name}»${dropKey ? ' и его ключ' : ''}?${shared ? ' Ключ останется — он выбран в других профилях.' : ''}`)) return;
+        if (dropKey) {
+            const r = await post('/api/secrets/delete', { key: srcOf(p).secret, id: p.secretId }).catch(() => null);
+            if (!r?.ok) toastr.warning('Профиль удалён, но ключ удалить не удалось — удалите его из списка ключей вручную');
+        }
         s.profiles = s.profiles.filter(x => x.id !== p.id);
         s.activeProfile = s.profiles[0].id; save(); fillModal();
     };
@@ -1032,7 +1101,8 @@ function buildModal() {
         try {
             const p = activeProfile();
             if (!(await profileHasKey(p))) throw new Error('Ключ не сохранён');
-            const r = await callModel(p, settings().s, 'Отвечай одним словом.', [{ role: 'user', content: 'Скажи: готов' }], { maxTokens: 30 });
+            // 256, а не 30: reasoning-модели и Claude 5 с мышлением на малом лимите отвечают пусто
+            const r = await callModel(p, settings().s, 'Отвечай одним словом.', [{ role: 'user', content: 'Скажи: готов' }], { maxTokens: 256 });
             st.textContent = `✔ Соединение есть (${p.model}). Ответ: ${r.text.trim() || '(пусто)'}`;
             st.classList.add('aip-ok');
         } catch (e) { st.textContent = `✖ ${short(e.message)}`; st.classList.add('aip-err'); }
@@ -1063,6 +1133,7 @@ function updateChip(state) {
 }
 
 function toggleThoughts() {
+    if (!document.getElementById('aip_thoughts')) buildThoughts();
     const el = document.getElementById('aip_thoughts');
     const v = !el.classList.contains('aip-open');
     showThoughts(v);
@@ -1077,7 +1148,13 @@ function fillModal() {
     sel.value = p.id;
     document.getElementById('aip_profName').value = p.name;
     for (const f of PROFILE_FIELDS) document.getElementById(`aip_p_${f}`).value = p[f] ?? '';
-    document.getElementById('aip_urlWrap').style.display = srcOf(p).source === 'custom' ? '' : 'none';
+    const src = srcOf(p);
+    document.getElementById('aip_urlWrap').style.display = (src.source === 'custom' || src.proxy) ? '' : 'none';
+    document.getElementById('aip_urlLabel').textContent = src.proxy
+        ? 'Адрес реверс-прокси (как в поле Reverse Proxy в ST)' : 'URL — база API или адрес реверс-прокси';
+    document.getElementById('aip_p_url').placeholder = src.proxy ? 'https://адрес-прокси/proxy/anthropic' : 'https://api.openai.com/v1';
+    document.getElementById('aip_proxyWrap').style.display = src.proxy ? '' : 'none';
+    document.getElementById('aip_keyWrap').style.display = src.proxy ? 'none' : '';
     document.getElementById('aip_models').replaceChildren(
         ...(srcOf(p).source === 'claude' ? CLAUDE_MODELS : []).map(id => Object.assign(document.createElement('option'), { value: id })));
     for (const f of GLOBAL_FIELDS) document.getElementById(`aip_${f}`).value = s[f] ?? '';
@@ -1103,34 +1180,44 @@ function updatePromptState() {
 
 async function refreshKeyState() {
     const p = activeProfile();
+    if (srcOf(p).proxy) {                         // реверс-прокси Claude: ключей нет, только пароль прокси
+        updateChip(p.url ? 'shared' : 'none');
+        return;
+    }
     const el = document.getElementById('aip_keyState');
     const sel = document.getElementById('aip_keySelect');
-    let has = false, legacy = false, list = [];
+    let has = false, legacy = false, list = [], failed = false;
     try {
         list = slotList(await secretState(), srcOf(p).secret);
+    } catch { failed = true; }
+    if (activeProfile() !== p) return;            // пока ждали, переключили профиль — не рисуем чужие ключи
+    if (!failed) {
         legacy = list.some(x => x.legacy);
-        if (p.secretId && !list.some(x => x.id === p.secretId)) { p.secretId = null; settings().save(); }  // ключ удалили
-        has = p.secretId ? true : list.length > 0;
-    } catch { /* нет доступа */ }
-    // список ключей: значения приходят от ST уже замаскированными (***abc), сам ключ в браузер не попадает
+        // ключ точно удалён (хранилище ответило нормально, а ключа нет) — сбрасываем выбор
+        if (p.secretId && !list.some(x => x.id === p.secretId)) { p.secretId = null; settings().save(); }
+    }
+    has = p.secretId ? true : list.some(x => x.label !== PLACEHOLDER_LABEL);
+    // значения приходят от ST уже замаскированными (*******abc), сам ключ в браузер не попадает
     const opt = (value, text) => Object.assign(document.createElement('option'), { value, textContent: text });
     // показываем только ключи, добавленные через расширение (+ выбранный, если он вдруг чужой)
     const mine = list.filter(x => x.id && (isAipKey(x) || x.id === p.secretId));
-    const tavern = list.some(x => !isAipKey(x));
-    const items = mine.map(x => opt(x.id, `🔑 ${keyName(x)}${x.value ? ` · …${String(x.value).slice(-4)}` : ''}`));
-    if (!items.length) items.push(opt('__none', '— ключей расширения нет, добавьте ниже —'));
-    if (tavern || !p.secretId) items.push(opt('', '↪ Ключ из панели API таверны'));
+    const tavern = list.some(x => !isAipKey(x) && x.label !== PLACEHOLDER_LABEL);
+    const items = mine.map(x => opt(x.id, `🔑 ${keyName(x)}${x.value ? ` · …${String(x.value).replace(/\*/g, '').slice(-3)}` : ''}`));
+    if (!items.length && !tavern) items.push(opt('__none', '— ключей расширения нет, добавьте ниже —'));
+    if (tavern || (!p.secretId && !items.length)) items.push(opt('', '↪ Ключ, активный в панели API таверны'));
     sel.replaceChildren(...items);
-    sel.value = p.secretId || (mine.length ? '' : '__none');
-    if (!sel.value) sel.value = '';
-    sel.disabled = legacy;
-    if (!mine.length) document.getElementById('aip_addKey').open = true;    updateChip(!has ? 'none' : p.secretId ? 'ok' : 'shared');
-    el.dataset.state = !has ? 'none' : p.secretId ? 'ok' : 'shared';
-    el.textContent = p.secretId && has
-        ? `🔒 Выбран ключ расширения (ключей расширения: ${mine.length}). Ключи хранятся на сервере SillyTavern, в браузер и настройки не попадают. Ключи из панели API таверны здесь не показываются.`
-        : has
-            ? `↪ Используется ключ из панели API таверны (${srcOf(p).label}).${legacy ? ' Эта версия ST хранит один ключ на провайдера.' : ' Чтобы не путаться, добавьте ключ расширения.'}`
-            : '⚠ Ключа нет — нажмите «Добавить ключ».';
+    sel.value = p.secretId || (tavern ? '' : (items[0]?.value ?? ''));
+    sel.disabled = legacy || failed;
+    if (!mine.length) document.getElementById('aip_addKey').open = true;
+    updateChip(failed ? 'none' : !has ? 'none' : p.secretId ? 'ok' : 'shared');
+    el.dataset.state = failed || !has ? 'none' : p.secretId ? 'ok' : 'shared';
+    el.textContent = failed
+        ? '⚠ Не удалось прочитать хранилище ключей SillyTavern. Выбор ключа сохранён; попробуйте открыть окно ещё раз.'
+        : p.secretId && has
+            ? `🔒 Выбран ключ расширения (всего ключей расширения: ${mine.length}). Ключи хранятся в хранилище SillyTavern на вашем устройстве (secrets.json) и не передаются в браузер. Ключи из панели API таверны здесь не показываются.`
+            : has
+                ? `↪ Используется ключ, активный в панели API таверны (${srcOf(p).label}).${legacy ? ' Эта версия ST хранит один ключ на провайдера.' : ' Чтобы не путаться, добавьте отдельный ключ расширения.'}`
+                : '⚠ Ключа нет — нажмите «Добавить ключ».';
 }
 
 async function refreshSync() {
@@ -1143,7 +1230,11 @@ function openModal() {
     try {
         if (!o) { buildModal(); o = document.getElementById('aip_overlay'); }   // кто-то удалил окно — пересобираем
         const host = uiHost();
-        document.body.appendChild(host);                                       // поднять поверх элементов, добавленных позже
+        if (document.body.lastElementChild !== host) {                         // поднять поверх элементов, добавленных позже
+            const th = host.querySelector('.aip-th-body'), y = th?.scrollTop;  // перенос узла сбрасывает прокрутку мыслей
+            document.body.appendChild(host);
+            if (th) th.scrollTop = y;
+        }
         if (o.parentElement !== host) host.appendChild(o);
     } catch (e) {
         console.error('[AI Player] окно не создано', e);
@@ -1263,11 +1354,18 @@ function initAll() {
     const ev = c.event_types;
     c.eventSource.on(ev.CHAT_CHANGED, () => {
         abortCtl?.abort();
+        reactCtl?.abort();
         pendingMeta = null;
+        reacted.clear();
         renderThoughts();
-        setTimeout(renderAllBadges, 300);
-        if (document.getElementById('aip_overlay').classList.contains('aip-open')) refreshSync();
+        renderAllBadges();                       // CHAT_CHANGED приходит после отрисовки сообщений
+        if (document.getElementById('aip_overlay')?.classList.contains('aip-open')) refreshSync();
     });
+    // глобальные обработчики — один раз (не при каждой пересборке окна)
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && document.getElementById('aip_overlay')?.classList.contains('aip-open')) closeModal();
+    });
+    window.addEventListener('resize', () => { const t = document.getElementById('aip_thoughts'); if (t) clampIntoView(t); });
     c.eventSource.on(ev.MESSAGE_SENT, onMessageSent);
     // шкала контекста следует за текущим чатом
     for (const name of ['CHAT_CHANGED', 'MESSAGE_SENT', 'MESSAGE_RECEIVED', 'MESSAGE_DELETED', 'MESSAGE_EDITED', 'MESSAGE_SWIPED', 'PERSONA_CHANGED']) {
@@ -1275,7 +1373,11 @@ function initAll() {
             if (document.getElementById('aip_overlay').classList.contains('aip-open')) scheduleMeter();
         });
     }
-    c.eventSource.on(ev.MESSAGE_RECEIVED, id => { onBotMessage(id); });
+    // мысли — только на настоящие ответы бота: не на приветствие, /sendas и картинки расширений
+    c.eventSource.on(ev.MESSAGE_RECEIVED, (id, type) => {
+        if (['first_message', 'command', 'extension'].includes(type)) return;
+        onBotMessage(id);
+    });
     if (ev.USER_MESSAGE_RENDERED) c.eventSource.on(ev.USER_MESSAGE_RENDERED, renderBadge);
     if (ev.MORE_MESSAGES_LOADED) c.eventSource.on(ev.MORE_MESSAGES_LOADED, renderAllBadges);
     renderThoughts();
