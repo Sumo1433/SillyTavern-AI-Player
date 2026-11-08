@@ -157,7 +157,23 @@
 #aip_modal label.aip-check { display: flex; align-items: center; gap: 8px; margin: 6px 0; color: var(--aip-fg); font-size: .9em; cursor: pointer; }
 #aip_modal label.aip-check small { color: var(--aip-muted); margin-left: auto; font-size: .85em; text-align: right; }
 #aip_modal label.aip-check input { width: auto; margin: 0; accent-color: var(--aip-accent); }
-#aip_modal input[type="text"], #aip_modal input[type="password"], #aip_modal input[type="number"], #aip_modal select, #aip_modal textarea { width: 100%; box-sizing: border-box; margin: 0; }
+/* Поля ввода оформляем сами, как .text_pole в ST: без этого браузер даёт белый фон,
+   а тема ST — светлый текст, и текст становится нечитаемым. */
+#aip_modal input[type="text"], #aip_modal input[type="password"], #aip_modal input[type="number"], #aip_modal select, #aip_modal textarea {
+  width: 100%; box-sizing: border-box; margin: 0;
+  background-color: var(--black30a, rgba(0, 0, 0, .3));
+  color: var(--aip-fg);
+  border: 1px solid var(--aip-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: inherit; font-size: .92em; line-height: 1.35;
+  -webkit-text-fill-color: currentColor;
+}
+#aip_modal select { padding-right: 4px; cursor: pointer; }
+#aip_modal option, #aip_modal optgroup { background-color: #1f1f23; color: #e8e8e8; }   /* выпадающий список — всегда читаемый */
+#aip_modal ::placeholder { color: var(--aip-muted); opacity: 1; }
+#aip_modal input:disabled, #aip_modal select:disabled { opacity: .55; cursor: not-allowed; }
+#aip_modal input:-webkit-autofill { -webkit-box-shadow: 0 0 0 40px rgba(0, 0, 0, .55) inset; -webkit-text-fill-color: var(--aip-fg); }
 #aip_modal input:focus-visible, #aip_modal select:focus-visible, #aip_modal textarea:focus-visible { outline: 2px solid color-mix(in srgb, var(--aip-accent) 70%, transparent); outline-offset: 1px; }
 #aip_modal textarea { min-height: 70px; resize: vertical; }
 #aip_modal textarea.aip-prompt { min-height: 260px; margin-top: 8px; font-family: var(--monoFontFamily, ui-monospace, monospace); font-size: .82em; line-height: 1.45; tab-size: 2; }

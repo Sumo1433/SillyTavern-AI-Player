@@ -5,7 +5,7 @@
 // Ключи хранятся только в secrets ST (на сервере); все запросы идут через бэкенд ST.
 
 const MODULE = 'ai_player';
-const VERSION = '0.2.4';
+const VERSION = '0.2.5';
 const CLAUDE_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'];
 const SOURCE = {
     openai: { source: 'custom', secret: 'api_key_custom', label: 'OpenAI-совместимый / реверс-прокси', defUrl: 'https://api.openai.com/v1' },
