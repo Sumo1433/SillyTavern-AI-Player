@@ -19,12 +19,14 @@ export function kindByStatus(status) {
 // Бэкенд ST часто отдаёт только текст ошибки провайдера — разбираем его, без догадок сверх этого
 export function kindByMessage(msg) {
     const t = String(msg || '');
-    if (/\b(401|403)\b|unauthori[sz]ed|forbidden|invalid[^.\n]{0,20}(api[ _-]?key|token|credential)|authentication/i.test(t)) return 'auth';
-    if (/\b429\b|rate[ _-]?limit|too many requests|quota/i.test(t)) return 'rate';
-    if (/insufficient[ _-](balance|funds|credit)|\b402\b|payment required/i.test(t)) return 'billing';
+    // числовые коды — только рядом со словами HTTP/status/code/error, иначе «max_tokens 500» дало бы 5xx
+    const code = n => new RegExp(`(?:HTTP|status|code|error)\\D{0,3}(?:${n})\\b`, 'i').test(t);
+    if (/insufficient[ _-]?(balance|funds|credit|quota)|payment required|billing/i.test(t) || code('402')) return 'billing';
+    if (code('401|403') || /unauthori[sz]ed|forbidden|invalid[^.\n]{0,20}(api[ _-]?key|token|credential)|authentication/i.test(t)) return 'auth';
+    if (code('429') || /rate[ _-]?limit|too many requests|quota/i.test(t)) return 'rate';
     if (/timed? ?out|ETIMEDOUT|time-?out/i.test(t)) return 'timeout';
-    if (/ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|fetch failed|socket hang up|network/i.test(t)) return 'network';
-    if (/\b50[0234]\b|bad gateway|service unavailable|overloaded/i.test(t)) return 'upstream';
+    if (/ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|fetch failed|socket hang up|network (error|failure)/i.test(t)) return 'network';
+    if (code('50[0234]') || /bad gateway|service unavailable|overloaded/i.test(t)) return 'upstream';
     return null;
 }
 // Ни ключей, ни паролей, ни адресов с учётными данными в сообщениях и диагностике
@@ -52,6 +54,7 @@ const KIND_LABELS = () => ({
     no_plugin: ui("плагин AI Player недоступен"),
     context: ui("запрос не помещается в контекст модели"),
     server: ui("внутренняя ошибка"),
+    session: ui("сессия SillyTavern устарела или нет доступа — обновите страницу"),
     unknown: ui("ошибка"),
 });
 // «Записи: провайдер не ответил вовремя (HTTP 504). подробности…»

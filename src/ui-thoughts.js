@@ -114,7 +114,7 @@ export function buildThoughts() {
         toastr.info(settings().s.reactions ? ui("Впечатления игрока включены") : ui("Впечатления игрока выключены — лишних запросов не будет"), 'AI Player', { timeOut: 2500 });
     };
     el.querySelector('[data-act="on"]').onclick = () => setReactions(true);
-    el.querySelector('[data-act="retry"]').onclick = retryReaction;
+    el.querySelector('[data-act="retry"]').onclick = () => retryReaction();
     el.querySelector('[data-act="tonew"]').onclick = scrollThoughtsToEnd;
     const thBody = el.querySelector('.aip-th-body');
     thBody.addEventListener('scroll', () => { if (thoughtsAtBottom(thBody)) el.classList.remove('aip-has-new'); }, { passive: true });

@@ -57,7 +57,7 @@ export async function onBotMessage(id) {
         // исходный ответ удалили, отредактировали, сменили свайп или перегенерировали — впечатление о нём уже не к месту
         if (!sameReplyVersion(snap)) { reacted.delete(key); return; }
         const text = String(res.text || '').replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '').trim();
-        if (!text) throw new AipError('empty', ui("модель вернула пустое впечатление"));
+        if (!text) throw new AipError('empty', '');
         const entry = {
             chatId: snap.chatId, mesId: snap.id, swipeId: snap.swipeId, sendDate: snap.sendDate, bot: snap.bot,
             playerModel: snap.playerModel, botModel: snap.botModel, text, ts: Date.now(),
@@ -73,8 +73,10 @@ export async function onBotMessage(id) {
         if (e.name === 'AbortError') return;
         console.warn('[AI Player]', redact(e?.message));
         const msg = describeError(e, 'reaction');
-        setReactionFailure({ ...snap, message: msg });
-        toastr.warning(msg + ui(" Нажмите, чтобы повторить."), 'AI Player', { timeOut: 10000, onclick: retryReaction });
+        const failure = { ...snap, message: msg };
+        setReactionFailure(failure);
+        // уведомление повторяет именно свой сбой, а не последний
+        toastr.warning(msg + ui(" Нажмите, чтобы повторить."), 'AI Player', { timeOut: 10000, onclick: () => retryReaction(failure) });
     }
 }
 
@@ -96,11 +98,10 @@ export function setReactionFailure(f) {
     const t = panel.querySelector('.aip-th-failtext');
     if (t) t.textContent = f?.message || '';
 }
-export function retryReaction() {
-    const f = reactionFailure;
+export function retryReaction(f = reactionFailure) {
     if (!f) return;
     if (!sameReplyVersion(f)) {
-        setReactionFailure(null);
+        if (reactionFailure === f) setReactionFailure(null);
         toastr.info(ui("Ответ бота изменился или удалён — повторять нечего"), 'AI Player');
         return;
     }

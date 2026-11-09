@@ -73,7 +73,7 @@ export async function playTurn() {
             return;
         }
         const msg = cleanReply(res.text, sync);
-        if (!msg) throw new AipError('empty', ui("Модель вернула пустую реплику"));
+        if (!msg) throw new AipError('empty', '');
         if (res.truncated) toastr.warning(ui("Ответ обрезан по лимиту токенов — увеличьте «Макс. токенов»"));
 
         const ta = document.getElementById('send_textarea');

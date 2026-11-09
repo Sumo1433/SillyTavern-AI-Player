@@ -4,7 +4,7 @@ import { CLAUDE_MODELS, GLOBAL_CHECKS, GLOBAL_FIELDS, PROFILE_FIELDS, SOURCE, ac
 import { AipError, describeError } from './errors.js';
 import { exportJSON, exportMD } from './export.js';
 import { promptText, ui } from './i18n.js';
-import { cleanLegacyCopies, deleteProfileKey, isAipKey, keyName, migrateProfileKey, needsMigration, probeVault, profileHasKey, saveProfileKey, secretState, slotList, vault, vaultBase, vaultCall, vaultKeys } from './keys.js';
+import { PLUGIN_VERSION, cleanLegacyCopies, deleteProfileKey, isAipKey, keyName, migrateProfileKey, needsMigration, pluginOutdated, probeVault, profileHasKey, saveProfileKey, secretState, sharedKeyGuard, slotList, vault, vaultBase, vaultCall, vaultKeys } from './keys.js';
 import { memBusy, memCtl, onMemoryInput, renderMemory, updateMemory } from './memory.js';
 import { getPrompt, getSync, renderPrompt, syncPreviewText } from './prompts.js';
 import { PLACEHOLDERS, PROMPT_DEFAULTS, PROMPT_LABELS, PROMPT_PRESETS } from './prompts-en.js';
@@ -211,7 +211,18 @@ export function buildModal() {
         // подключения таверны (не выбранный в профиле) не трогаем никогда
         const ref = p.keyId ? 'keyId' : p.secretId ? 'secretId' : null;
         const shared = !!ref && s.profiles.some(x => x !== p && x[ref] === p[ref]);
-        const dropKey = !!ref && !shared;
+        let dropKey = !!ref && !shared;
+        // общее хранилище таверны: с плагином не трогаем вовсе (только отвязываем), без плагина —
+        // не удаляем активный ключ основного подключения и ключи профилей Connection Manager
+        let guard = '';
+        if (dropKey && ref === 'secretId') {
+            if (vault.ok) dropKey = false;
+            else {
+                try { guard = sharedKeyGuard(slotList(await secretState(), srcOf(p).secret).find(x => x.id === p.secretId)); }
+                catch { guard = ui("Не удалось проверить, используется ли ключ в таверне, — он не удалён."); }
+                if (guard) dropKey = false;
+            }
+        }
         if (!confirm(ui`Удалить профиль «${p.name}»${dropKey ? ui(" и его ключ") : ''}?${shared ? ui(" Ключ останется — он выбран в других профилях.") : ''}`)) return;
         if (dropKey) {
             let ok = false;
@@ -221,6 +232,7 @@ export function buildModal() {
             } catch { ok = false; }
             if (!ok) toastr.warning(ui("Профиль удалён, но ключ удалить не удалось — удалите его из списка ключей вручную"));
         }
+        if (guard) toastr.info(guard, 'AI Player', { timeOut: 9000 });
         s.profiles = s.profiles.filter(x => x.id !== p.id);
         s.activeProfile = s.profiles[0].id; save(); fillModal();
     };
@@ -234,6 +246,8 @@ export function buildModal() {
             const p = activeProfile();
             const prev = p.provider;
             p[f] = e.target.value;
+            // общий режим: введённый пароль прокси заменяет ключ плагина, который сейчас недоступен
+            if (f === 'proxyPassword' && e.target.value && !vault.ok) p.keyId = null;
             if (f === 'provider' && prev !== p.provider) {
                 if (!p.url || p.url === SOURCE[prev]?.defUrl) p.url = srcOf(p).defUrl;
                 p.secretId = null;   // ключ другого провайдера не подходит
@@ -323,7 +337,7 @@ export function buildModal() {
         if (v === '__none') { $('#aip_addKey').open = true; return; }
         if (v === '__legacy') return;
         if (vault.ok) { p.keyId = v || null; if (v) p.secretId = null; }
-        else p.secretId = v || null;
+        else { p.secretId = v || null; if (v) p.keyId = null; }
         settings().save();
         refreshKeyState();
         scheduleMeter();
@@ -359,7 +373,7 @@ export function buildModal() {
         st.className = 'aip-status'; st.textContent = ui("Проверка…");
         try {
             const p = activeProfile();
-            if (!(await profileHasKey(p))) throw new AipError('no_key', ui("Ключ не сохранён"));
+            if (!(await profileHasKey(p))) throw new AipError('no_key', srcOf(p).proxy && !p.keyId && !vault.ok ? ui("Не указан адрес или пароль реверс-прокси") : ui("Ключ не сохранён"));
             // 256, а не 30: reasoning-модели и Claude 5 с мышлением на малом лимите отвечают пусто
             const r = await callModel(p, settings().s, promptText("Отвечай одним словом."), [{ role: 'user', content: promptText("Скажи: готов") }], { maxTokens: srcOf(p).source === 'claude' ? 1024 : 256 });
             st.textContent = ui`✔ Соединение есть (${p.model}). Ответ: ${r.text.trim() || ui("(пусто)")}`;
@@ -450,7 +464,8 @@ function applyKeyLayout(p) {
     box.dataset.mode = !vault.checked ? 'unknown' : vault.ok ? 'vault' : 'legacy';
     if (!vault.checked) { box.textContent = ''; return; }
     if (vault.ok) {
-        box.textContent = ui`🔒 Плагин AI Player ${vault.version || ''} установлен: ключи и пароли прокси хранятся отдельно от ключей таверны (data/<пользователь>/ai-player/keys.json на сервере), в менеджере ключей таверны не появляются, в браузер не передаются. Каждый ключ привязан к типу API и адресу, с которым его сохранили.`;
+        box.textContent = ui`🔒 Плагин AI Player ${vault.version || ''} установлен: ключи и пароли прокси хранятся отдельно от ключей таверны (data/<пользователь>/ai-player/keys.json на сервере), в менеджере ключей таверны не появляются, в браузер не передаются. Каждый ключ привязан к типу API и адресу, с которым его сохранили.`
+            + (pluginOutdated() ? ui`\n⚠ Плагин устарел (нужна версия ${PLUGIN_VERSION}): удалите папку plugins/ai-player, скопируйте server-plugin заново и перезапустите таверну.` : '');
         return;
     }
     box.replaceChildren(
@@ -476,7 +491,7 @@ async function refreshKeyState() {
     migrateBtn.classList.toggle('aip-hidden', !needsMigration(p));
     cleanBtn.classList.toggle('aip-hidden', !vault.ok);
     if (srcOf(p).proxy && !vault.ok) {            // общий режим: у прокси нет ключей, только пароль в профиле
-        updateChip(p.url && p.proxyPassword ? 'ok' : 'none');
+        updateChip(p.url && p.proxyPassword && !p.keyId ? 'ok' : 'none');
         return;
     }
     const opt = (value, text) => Object.assign(document.createElement('option'), { value, textContent: text });
@@ -517,7 +532,7 @@ async function refreshKeyState() {
         sel.value = p.secretId || (mine.length ? '' : '__none');
         if (!mine.length && !failed) document.getElementById('aip_addKey').open = true;
         count = mine.length;
-        has = !!p.secretId;
+        has = !!p.secretId && !p.keyId;
     }
     sel.disabled = legacy || failed;
     const state = failed || !has ? 'none' : 'ok';
@@ -526,6 +541,8 @@ async function refreshKeyState() {
     el.textContent = failed
         ? (vault.ok ? ui("⚠ Не удалось прочитать хранилище плагина AI Player. Выбор ключа сохранён; попробуйте открыть окно ещё раз.")
             : ui("⚠ Не удалось прочитать хранилище ключей SillyTavern. Выбор ключа сохранён; попробуйте открыть окно ещё раз."))
+        : !vault.ok && p.keyId
+            ? ui("⚠ Профиль привязан к ключу из плагина AI Player, а плагин сейчас недоступен. Верните плагин или выберите здесь другой ключ.")
         : needsMigration(p)
             ? ui("↪ Профиль пока использует старый ключ из общего хранилища SillyTavern — он виден в менеджере ключей таверны. Нажмите «Перенести в хранилище AI Player»: плагин скопирует ключ на сервере, в браузер он не попадёт. Общая копия останется, пока вы её не удалите.")
             : mismatch

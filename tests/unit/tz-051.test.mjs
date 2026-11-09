@@ -412,3 +412,54 @@ test('U1. Данные 0.5.0 переживают обновление: проф
     assert.deepEqual(JSON.parse(JSON.stringify(t.c.chatMetadata.aip_log)), log);
     assert.equal(t.$$('#aip_thoughts .aip-th-item').length, 1);
 });
+
+// ================================================================ находки ревью
+test('V1. 403 устаревшей сессии ST: проба плагина неизвестна → ключ не пишется в общее хранилище; ход — «сессия устарела»', async () => {
+    t = setup({ plugin: true, extensionSettings: settingsWith([{ ...PROFILE(), secretId: null }]) });
+    t.env.fail['plugins/ai-player/probe'] = { status: 403, body: undefined };
+    await ready();
+    const before = secretsSnapshot();
+    t.click('#aip_menu');
+    await sleep(20);
+    t.$('#aip_keyInput').value = 'sk-must-not-leak-1';
+    t.click('#aip_keySave');
+    await waitFor(() => t.toasts.some(x => x.type === 'error'), { msg: 'ошибка сохранения' });
+    assert.equal(secretsSnapshot(), before, 'в secrets.json ничего не записано');
+    assert.match(t.toasts.find(x => x.type === 'error').msg, /сессия SillyTavern устарела/);
+    t.env.fail['backends/chat-completions/generate'] = { status: 403, body: undefined };
+    t.s().profiles[0].secretId = 'k1';
+    t.click('#aip_play');
+    await waitFor(() => t.toasts.filter(x => x.type === 'error').length >= 2);
+    assert.match(t.toasts.filter(x => x.type === 'error').at(-1).msg, /^Ход: сессия SillyTavern устарела/);
+});
+
+test('V2. С плагином удаление профиля/ключа со старым общим ключом только отвязывает — secrets.json не меняется', async () => {
+    t = setup({ plugin: true, extensionSettings: settingsWith([{ ...PROFILE() }, { ...PROFILE(), id: 'p2', name: 'Второй', secretId: null }]) });
+    await ready();
+    const before = secretsSnapshot();
+    t.click('#aip_menu');
+    await sleep(20);
+    t.click('#aip_keyDel');
+    await waitFor(() => t.s().profiles[0].secretId === null, { msg: 'отвязан' });
+    assert.equal(t.s().profiles[0].legacySecretId, 'k1');
+    t.s().profiles[0].secretId = 'k1';
+    t.click('#aip_profDel');
+    await waitFor(() => t.s().profiles.length === 1);
+    assert.equal(secretsSnapshot(), before);
+    assert.ok(!t.calls.some(c => isSecretCall(c, 'delete')));
+});
+
+test('V3. Без плагина активный ключ таверны и ключ профиля Connection Manager не удаляются', async () => {
+    t = setup({ secrets: { api_key_custom: [{ id: 'k1', label: 'AI Player · Тест', value: 'sk-aip-1111', active: true }, { id: 'k2', label: 'AI Player · CM', value: 'sk-aip-2222', active: false }] } });
+    t.c.extensionSettings.connectionManager = { profiles: [{ id: 'cm', 'secret-id': 'k2' }] };
+    await ready();
+    t.click('#aip_menu');
+    await sleep(20);
+    t.click('#aip_keyDel');
+    await waitFor(() => t.toasts.some(x => /активен в основном подключении/.test(x.msg)));
+    t.s().profiles[0].secretId = 'k2';
+    t.click('#aip_keyDel');
+    await waitFor(() => t.toasts.some(x => /Connection Manager/.test(x.msg)));
+    assert.ok(!t.calls.some(c => isSecretCall(c, 'delete')));
+    assert.equal(t.secrets.api_key_custom.length, 2);
+});

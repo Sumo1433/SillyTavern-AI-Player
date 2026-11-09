@@ -12,7 +12,7 @@
 //   src/errors.js                   — виды ошибок, понятные сообщения, вырезание секретов
 //   src/keys.js                     — хранилище ключей: плагин или общий secrets.json, миграция
 //   src/api.js                      — запросы к модели, список моделей, очистка ответа
-//   src/prompts-en.js, prompts.js   — встроенные промпты (источник для prompts/en/*.md), подстановка
+//   src/prompts-en.js, prompts.js   — встроенные промпты (источник для prompts/*.md), подстановка
 //   src/migrations.js               — обновление точных старых встроенных промптов
 //   src/context.js                  — сборка истории хода, бюджет контекста, шкала
 //   src/memory.js                   — записи игрока (память персонажа)
@@ -109,6 +109,10 @@ function initAll() {
         maybeUpdateMemory(id);
     });
     // удалили сообщение / перегенерировали ответ / удалили чат — убираем мысли о несуществующих сообщениях
+    // правка и свайп учтённого сообщения — пометка «требуют проверки» у записей появляется сразу
+    for (const name of ['MESSAGE_EDITED', 'MESSAGE_SWIPED']) {
+        if (ev[name]) c.eventSource.on(ev[name], () => renderMemory());
+    }
     for (const name of ['MESSAGE_DELETED', 'CHAT_DELETED', 'GROUP_CHAT_DELETED']) {
         if (ev[name]) c.eventSource.on(ev[name], () => { renderThoughts(); renderMemory(); });
     }

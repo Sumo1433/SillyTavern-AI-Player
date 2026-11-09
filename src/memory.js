@@ -98,7 +98,7 @@ export async function updateMemory({ upTo, manual = false } = {}) {
         const why = without > limit
             ? ui`прежние записи и инструкции уже занимают ~${without} из ${limit} токенов`
             : ui`сообщение #${chat.indexOf(fresh.at(-1))} слишком длинное для лимита ${limit} токенов`;
-        toastr.warning(ui`AI Player: записи не обновлены — запрос не помещается в контекст модели (${why}). Увеличьте «Контекст модели» в профиле или сократите записи.`, 'AI Player', { timeOut: 10000 });
+        toastr.warning(ui`Записи не обновлены — запрос не помещается в контекст модели (${why}). Увеличьте «Контекст модели» в профиле или сократите записи.`, 'AI Player', { timeOut: 10000 });
         return false;
     }
     const user = frame(skipped).replace('\u0000', lines.join('\n\n'));
@@ -113,7 +113,7 @@ export async function updateMemory({ upTo, manual = false } = {}) {
         const res = await callModel(p, s, system, [{ role: 'user', content: user }], { maxTokens: maxOut, signal });
         if (chatId() !== id0 || signal.aborted) return false;
         const text = String(res.text || '').replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '').trim();
-        if (!text) throw new AipError('empty', ui("модель вернула пустые записи"));
+        if (!text) throw new AipError('empty', '');
         const meta = ctx().chatMetadata;
         if (!meta) return false;
         // пока шёл запрос, изменили учтённые сообщения (правка, удаление, свайп) — результат устарел
@@ -126,7 +126,8 @@ export async function updateMemory({ upTo, manual = false } = {}) {
             toastr.info(ui("Записи не обновлены: их изменили вручную, пока шёл запрос. Ваша правка сохранена."), 'AI Player', { timeOut: 7000 });
             return false;
         }
-        if (res.truncated) toastr.warning(ui("Записи обрезаны по лимиту токенов — часть разделов могла потеряться"), 'AI Player');
+        // обрезанный ответ потерял бы разделы — прежние записи важнее
+        if (res.truncated) { toastr.warning(ui("Записи не обновлены: ответ модели обрезан по лимиту токенов, и часть разделов потерялась бы. Прежние записи сохранены — сократите их или повторите позже."), 'AI Player', { timeOut: 9000 }); return false; }
         if (skipped) toastr.warning(ui`Записи обновлены, но ${skipped} самых старых новых сообщений не поместились в контекст и не учтены.`, 'AI Player', { timeOut: 7000 });
         meta.aip_memory = {
             chatId: id0, text, upTo: end, upToDate: endDate, hash: snap.hash, rev: snap.rev + 1,
@@ -169,7 +170,10 @@ export function renderMemory() {
     const ta = document.getElementById('aip_memText');
     if (!ta) return;
     const mem = chatId() ? memoryState() : null;
-    if (document.activeElement !== ta) ta.value = mem?.text || '';
+    // поле в фокусе не перезаписываем, пока записи те же: каждая правка сохраняется сразу, поэтому
+    // другая ревизия значит, что записи обновились или очистились извне, — показываем их
+    const rev = memoryRevKey(mem);
+    if (document.activeElement !== ta || ta.dataset.rev !== rev) { ta.value = mem?.text || ''; ta.dataset.rev = rev; }
     ta.readOnly = memBusy;
     document.getElementById('aip_memUpdate')?.classList.toggle('disabled', memBusy);
     const { s } = settings();
@@ -184,10 +188,18 @@ export function renderMemory() {
     ].filter(Boolean).join('\n');
 }
 // Ручная правка записей: сохраняем в метаданные текущего чата
+const memoryRevKey = mem => `${mem?.rev ?? 0}:${mem?.text ?? ''}`;
 export function onMemoryInput(e) {
     const meta = ctx().chatMetadata;
     const id0 = chatId();
     if (!meta || !id0 || memBusy) return;
+    // поле показывает устаревшую версию (записи обновились, пока оно было открыто) — не затираем свежие
+    if (e.target.dataset.rev != null && e.target.dataset.rev !== memoryRevKey(meta.aip_memory)) {
+        toastr.warning(ui("Записи обновились, пока поле было открыто: показаны новые записи, ваша последняя правка не сохранена."), 'AI Player', { timeOut: 8000 });
+        e.target.blur();
+        renderMemory();
+        return;
+    }
     const text = e.target.value;
     const rev = (meta.aip_memory?.rev ?? 0) + 1;
     // ручная правка = записи проверены человеком: снимаем пометку «требуют проверки» и фиксируем
@@ -200,6 +212,7 @@ export function onMemoryInput(e) {
         if (idx >= 0) Object.assign(meta.aip_memory, { upTo: idx, upToDate: ctx().chat[idx]?.send_date ?? null, hash: historyHash(ctx().chat, idx) });
     }
     else meta.aip_memory = { chatId: id0, text, upTo: -1, upToDate: null, rev, updated: Date.now(), model: ui("вручную") };
+    e.target.dataset.rev = memoryRevKey(meta.aip_memory);
     clearTimeout(memSaveTimer);
     memSaveTimer = setTimeout(() => { if (chatId() === id0) ctx().saveMetadata?.(); }, 800);
 }

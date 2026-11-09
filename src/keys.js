@@ -1,4 +1,4 @@
-import { post, settings, srcOf } from './core.js';
+import { ctx, post, settings, srcOf } from './core.js';
 import { AipError, kindByStatus } from './errors.js';
 import { ui } from './i18n.js';
 
@@ -10,26 +10,38 @@ import { ui } from './i18n.js';
 //    в менеджере ключей таверны; запросы идут через бэкенд ST. Профиль хранит secretId.
 // Активный ключ основного подключения таверны как запасной не используется ни в одном режиме.
 export const VAULT = '/api/plugins/ai-player';
-export const vault = { checked: false, ok: false, version: null };
+// версия плагина, с которой выпущено расширение; более старый плагин работает, но просим обновить
+export const PLUGIN_VERSION = '1.1.0';
+// ok — плагин ответил; absent — сервер ЯВНО сказал, что плагина нет (404/405); иначе состояние
+// неизвестно (403 устаревшей сессии, 5xx, нет связи) — тогда ключи в общее хранилище не пишем
+export const vault = { checked: false, ok: false, absent: false, status: null, version: null };
 export async function probeVault() {
     try {
         const r = await post(`${VAULT}/probe`);
         const j = r.ok ? await r.json().catch(() => null) : null;
-        Object.assign(vault, { checked: true, ok: !!j?.ok, version: j?.version ?? null });
-    } catch { Object.assign(vault, { checked: true, ok: false, version: null }); }
+        Object.assign(vault, { checked: true, ok: !!j?.ok, absent: !j?.ok && (r.status === 404 || r.status === 405), status: r.status, version: j?.version ?? null });
+    } catch { Object.assign(vault, { checked: true, ok: false, absent: false, status: null, version: null }); }
     return vault.ok;
 }
+export async function ensureVault() { if (!vault.checked) await probeVault(); return vault; }
+export const pluginOutdated = () => vault.ok && !!vault.version && vault.version.localeCompare(PLUGIN_VERSION, undefined, { numeric: true }) < 0;
 export async function vaultCall(route, body, signal) {
     let r;
     try { r = await post(`${VAULT}${route}`, body, signal); }
-    catch (e) { if (e?.name === 'AbortError') throw e; throw new AipError('no_plugin', ui("Плагин AI Player не отвечает")); }
+    catch (e) { if (e?.name === 'AbortError') throw e; throw new AipError('network', ui("Плагин AI Player не отвечает")); }
     const j = await r.json().catch(() => null);
     if (!r.ok || !j) {
-        if (!j?.error && (r.status === 404 || r.status === 405)) { vault.ok = false; throw new AipError('no_plugin', ui("Плагин AI Player не найден на сервере SillyTavern")); }
+        if (!j?.error && (r.status === 404 || r.status === 405)) { Object.assign(vault, { ok: false, absent: true }); throw new AipError('no_plugin', ui("Плагин AI Player не найден на сервере SillyTavern")); }
+        if (!j?.error && r.status === 403) throw new AipError('session', ui("SillyTavern отклонил запрос (HTTP 403)"));
         const er = j?.error || {};
         throw new AipError(er.kind || kindByStatus(r.status), er.message || `HTTP ${r.status}`, er.status ?? null);
     }
     return j;
+}
+// ключи, на которые ссылаются профили встроенного Connection Manager SillyTavern
+function connectionManagerSecretIds() {
+    try { return new Set((ctx().extensionSettings?.connectionManager?.profiles || []).map(p => p?.['secret-id']).filter(Boolean)); }
+    catch { return new Set(); }
 }
 export const vaultKeys = async provider => (await vaultCall('/keys/list', { provider })).keys || [];
 // адрес, к которому плагин привяжет ключ (та же нормализация, что на сервере)
@@ -77,6 +89,11 @@ const PLACEHOLDER_LABEL = 'Пусто — заглушка AI Player (ключ �
 // для всей таверны — поэтому возвращаем таверне её прежний активный ключ, а если его не было —
 // ставим пустую заглушку, чтобы ключ расширения не ушёл на адрес основного подключения таверны.
 export async function saveProfileKey(p, value, label) {
+    await ensureVault();
+    if (!vault.ok && !vault.absent) {
+        // не знаем, есть ли плагин (устаревшая сессия, сбой сервера) — в общее хранилище не пишем
+        throw new AipError(vault.status === 403 ? 'session' : 'no_plugin', ui("Не удалось проверить, установлен ли плагин AI Player, — ключ не сохранён, чтобы не записать его в общее хранилище таверны. Обновите страницу и повторите."), vault.status);
+    }
     if (vault.ok) {
         const j = await vaultCall('/keys/add', { provider: p.provider, url: p.url, value, label: label || p.name });
         if (!j?.key?.id) throw new AipError('bad_response', ui("Плагин не подтвердил сохранение ключа"));
@@ -97,19 +114,22 @@ export async function saveProfileKey(p, value, label) {
     if (!j?.id && !before.some(x => x.legacy)) throw new AipError('bad_response', ui("SillyTavern не подтвердил сохранение ключа"));
     p.secretId = j?.id || null;
     p.keyId = null;
+    let restored = true;
+    const okOf = async req => { try { return (await req).ok; } catch { return false; } };
     if (j?.id) {
         if (prevActive && prevActive !== j.id) {
-            await post('/api/secrets/rotate', { key, id: prevActive }).catch(() => {});
+            restored = await okOf(post('/api/secrets/rotate', { key, id: prevActive }));
         } else if (!prevActive) {
             const ph = before.find(x => x.label === PLACEHOLDER_LABEL);
-            if (ph) await post('/api/secrets/rotate', { key, id: ph.id }).catch(() => {});
+            if (ph) restored = await okOf(post('/api/secrets/rotate', { key, id: ph.id }));
             else {
-                await post('/api/secrets/write', { key, value: '', label: PLACEHOLDER_LABEL }).catch(() => {});
-                toastr.info(ui("В списке ключей таверны появилась пустая «заглушка AI Player» — она нужна, чтобы ключ расширения не стал ключом основной таверны. Не удаляйте её, пока не добавите таверне свой ключ."), 'AI Player', { timeOut: 9000 });
+                restored = await okOf(post('/api/secrets/write', { key, value: '', label: PLACEHOLDER_LABEL }));
+                if (restored) toastr.info(ui("В списке ключей таверны появилась пустая «заглушка AI Player» — она нужна, чтобы ключ расширения не стал ключом основной таверны. Не удаляйте её, пока не добавите таверне свой ключ."), 'AI Player', { timeOut: 9000 });
             }
         }
     }
     settings().save();
+    if (!restored) toastr.warning(ui("Ключ сохранён, но вернуть таверне прежний активный ключ не удалось: сейчас в основном подключении может быть выбран ключ AI Player. Проверьте ключ в панели API таверны."), 'AI Player', { timeOut: 12000 });
     return true;
 }
 // Удаляет выбранный в профиле ключ. Ключ основного подключения таверны отсюда не удаляется никогда.
@@ -125,8 +145,19 @@ export async function deleteProfileKey(p) {
         return true;
     }
     if (!p.secretId) return false;
+    await ensureVault();
+    if (vault.ok) {
+        // с плагином общее хранилище таверны отсюда не меняем: только отвязываем профиль
+        if (!confirm(ui("Отвязать старый общий ключ от профиля? Из хранилища SillyTavern он не удаляется — для этого есть кнопка «Удалить старые общие копии»."))) return false;
+        p.legacySecretId = p.secretId;
+        p.secretId = null;
+        save();
+        return true;
+    }
     const key = srcOf(p).secret;
     const item = slotList(await secretState(), key).find(x => x.id === p.secretId);
+    const guard = sharedKeyGuard(item);
+    if (guard) { toastr.warning(guard, 'AI Player', { timeOut: 9000 }); return false; }
     if (!confirm(ui`Удалить ключ «${keyName(item)}» из хранилища SillyTavern? Его потеряют все профили, где он выбран.`)) return false;
     const r = await post('/api/secrets/delete', { key, id: p.secretId });
     if (!r.ok) throw new AipError(kindByStatus(r.status), ui`Не удалось удалить ключ (HTTP ${r.status})`);
@@ -136,11 +167,21 @@ export async function deleteProfileKey(p) {
     return true;
 }
 
+// Можно ли удалить запись общего хранилища, не задев основное подключение таверны.
+// Возвращает причину отказа или ''.
+export function sharedKeyGuard(item) {
+    if (!item) return '';
+    if (item.active) return ui("Этот ключ сейчас активен в основном подключении таверны — AI Player его не удаляет. Выберите в панели API таверны другой ключ или удалите этот там.");
+    if (connectionManagerSecretIds().has(item.id)) return ui("Этот ключ выбран в профиле Connection Manager SillyTavern — AI Player его не удаляет.");
+    return '';
+}
+
 // ---------- Переход на хранилище плагина ----------
 // Ключ профиля из общего secrets.json копируется плагином на сервере (в браузер не попадает).
 // Общая копия остаётся на месте: удалить её — отдельное подтверждённое действие (cleanLegacyCopies).
 export const needsMigration = p => vault.ok && !p.keyId && (srcOf(p).proxy ? !!p.proxyPassword : !!p.secretId);
 export async function migrateProfileKey(p) {
+    await ensureVault();
     if (!needsMigration(p)) return false;
     const { s, save } = settings();
     if (srcOf(p).proxy) {
@@ -177,7 +218,8 @@ async function legacyCopies() {
 export async function cleanLegacyCopies() {
     const { s, save } = settings();
     const items = await legacyCopies();
-    const used = new Set(s.profiles.map(p => p.secretId).filter(Boolean));
+    // зависимости: активный ключ таверны, профили AI Player без переноса, профили Connection Manager ST
+    const used = new Set([...s.profiles.map(p => p.secretId).filter(Boolean), ...connectionManagerSecretIds()]);
     const del = items.filter(x => !x.active && !used.has(x.id));
     const kept = items.length - del.length;
     if (!del.length) {

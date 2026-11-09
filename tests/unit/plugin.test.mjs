@@ -132,3 +132,18 @@ test('P7. Валидация: пустой ключ, неизвестный ти
     assert.equal((await add(alice, { url: 'file:///etc/passwd' })).statusCode, 400);
     assert.equal((await call('/keys/list', { directories: {} }, {})).statusCode, 401, 'без пользователя ST');
 });
+
+test('P8. Импорт: категория ключа строго соответствует типу API (ключ Anthropic не уходит на чужой адрес)', async () => {
+    const { mkdirSync } = await import('node:fs');
+    const secretsFile = path.join(dir, 'alice', 'secrets.json');
+    mkdirSync(path.dirname(secretsFile), { recursive: true });
+    writeFileSync(secretsFile, JSON.stringify({ api_key_claude: [{ id: 'c1', label: 'AI Player · C', value: 'sk-ant-7777', active: false }] }));
+    for (const provider of ['claude_proxy', 'openai']) {
+        const r = await call('/keys/import', alice, { secretKey: 'api_key_claude', secretId: 'c1', provider, url: 'https://attacker.example/v1' });
+        assert.equal(r.statusCode, 400, provider);
+        assert.equal(r.body.error.kind, 'key_mismatch');
+    }
+    assert.equal((await call('/keys/import', alice, { secretKey: 'api_key_claude', secretId: 'c1', provider: 'anthropic' })).statusCode, 200);
+    const mismatch = await call('/generate', alice, { keyId: (await call('/keys/list', alice, {})).body.keys[0].id, provider: 'anthropic', model: 'm' });
+    assert.equal(upstream[0]?.url, 'https://api.anthropic.com/v1/messages', 'только официальный адрес');
+});

@@ -16,6 +16,8 @@ function responseError(r, j) {
         || (e === true ? ui("Ошибка бэкенда ST — подробности в консоли сервера SillyTavern") : '')
         || j?.message || `HTTP ${r.status}`;
     const status = r.ok ? null : r.status;
+    // 403 без JSON-ошибки — это защита ST (устаревший CSRF-токен после перезапуска), а не провайдер
+    if (status === 403 && !e) return new AipError('session', ui("SillyTavern отклонил запрос (HTTP 403)"), status);
     return new AipError(kindByMessage(m) || (status ? kindByStatus(status) : 'upstream'), m, status);
 }
 
@@ -33,7 +35,8 @@ export async function callModel(p, s, system, messages, { maxTokens, signal, sto
         // Claude 5 / Fable не принимают параметры сэмплинга. ST сам это правит только для своих
         // источников openai/openrouter, а для custom передаёт тело как есть.
         const reasoning = /(^|\/)(o\d|gpt-5)/i.test(p.model);
-        const noSampling = /claude-(fable|opus-5|sonnet-5|haiku-5)/i.test(p.model);
+        // как в ST 1.19 (chat-completions.js): эти модели Claude не принимают temperature
+        const noSampling = /claude-(fable|opus-5|sonnet-5|haiku-5|opus-4-[78])/i.test(p.model);
         if (p.keyId) {
             // хранилище плагина: ключ на сервере, привязан к типу API и адресу
             if (!vault.checked) await probeVault();
@@ -116,7 +119,8 @@ export async function fetchModels(p) {
     const body = { chat_completion_source: 'custom', custom_url: baseUrl(p), secret_id: p.secretId };
     const r = await post('/api/backends/chat-completions/status', body);
     const j = await r.json().catch(() => ({}));
-    if (j?.error) return [];
+    if (!r.ok) throw responseError(r, j);
+    if (j?.error) return [];              // ST отвечает 200 и { error: true }, если сервер не отдал список
     const arr = j?.data ?? j?.models ?? [];
     return [...new Set((Array.isArray(arr) ? arr : []).map(m => m?.id ?? m).filter(x => typeof x === 'string'))].sort();
 }

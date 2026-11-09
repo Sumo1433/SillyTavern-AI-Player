@@ -27,9 +27,11 @@ export const info = {
     description: 'Separate per-user API key storage and requests for the AI Player extension.',
 };
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const PROVIDERS = ['openai', 'anthropic', 'claude_proxy'];
-const IMPORTABLE = ['api_key_custom', 'api_key_claude'];
+// какую категорию secrets.json можно перенести и для какого типа API: ключ Anthropic ST отправляет
+// только на api.anthropic.com — переносить его к произвольному адресу нельзя
+const IMPORTABLE = { api_key_custom: 'openai', api_key_claude: 'anthropic' };
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1';
 const UPSTREAM_TIMEOUT = 170000;
 
@@ -47,12 +49,26 @@ function readStore(req) {
     const data = JSON.parse(fs.readFileSync(file, 'utf8'));
     return { keys: Array.isArray(data?.keys) ? data.keys : [] };
 }
+// Атомарная запись: временный файл + fsync + rename. На Windows rename может кратко упасть с
+// EPERM/EBUSY, пока антивирус или индексатор держит файл, — повторяем несколько раз.
 function writeStore(req, store) {
     const file = storeFile(req);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    const tmp = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(store, null, 2), { encoding: 'utf8', mode: 0o600 });
-    fs.renameSync(tmp, file);
+    const tmp = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+    try {
+        const fd = fs.openSync(tmp, 'w', 0o600);
+        try { fs.writeFileSync(fd, JSON.stringify(store, null, 2), 'utf8'); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+        for (let attempt = 0; ; attempt++) {
+            try { fs.renameSync(tmp, file); break; } catch (e) {
+                if (attempt >= 4 || !['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) throw e;
+                const until = Date.now() + 50 * (attempt + 1);
+                while (Date.now() < until) { /* короткое ожидание без async */ }
+            }
+        }
+    } catch (e) {
+        try { fs.rmSync(tmp, { force: true }); } catch { /* уже нет */ }
+        throw httpError(500, 'server', `Could not save AI Player keys (${e.code || 'error'})`);
+    }
 }
 
 // Адрес, к которому привязан ключ: ключ уходит только туда, куда его сохранили
@@ -73,7 +89,8 @@ function findKey(req, id, provider, url) {
     const k = readStore(req).keys.find(x => x.id === id);
     if (!k) throw httpError(404, 'no_key', 'Key not found in AI Player storage');
     if (provider && k.provider !== provider) throw httpError(400, 'key_mismatch', 'Key belongs to another API type');
-    if (provider && normalizeBase(provider, url) !== k.base) throw httpError(400, 'key_mismatch', `Key is bound to another address (${k.base})`);
+    // адрес в текст не включаем: в нём может быть зашит токен прокси
+    if (provider && normalizeBase(provider, url) !== k.base) throw httpError(400, 'key_mismatch', 'Key is bound to another API address');
     return k;
 }
 
@@ -85,7 +102,8 @@ function redact(text, secret) {
     if (secret && secret.length >= 4) t = t.split(secret).join('***');
     return t.replace(/Bearer\s+[^\s"']+/gi, 'Bearer ***')
         .replace(/\b(sk|key|pk)-[A-Za-z0-9_-]{6,}/g, '$1-***')
-        .replace(/(https?:\/\/)[^/\s:@]+:[^/\s@]+@/gi, '$1***@');
+        .replace(/(https?:\/\/)[^/\s:@]+:[^/\s@]+@/gi, '$1***@')
+        .replace(/([?&](?:key|api_key|apikey|token|password|access_token)=)[^&\s"']+/gi, '$1***');
 }
 function kindByStatus(status) {
     if (status === 401 || status === 403) return 'auth';
@@ -113,19 +131,20 @@ async function upstream(res, url, init, secret) {
     // клиент закрыл соединение (▶ повторно, смена чата) — отменяем и запрос к провайдеру
     const onClose = () => { if (!res.writableEnded) ctl.abort(new Error('client_closed')); };
     res.on('close', onClose);
-    let r;
+    let r, raw;
+    // тайм-аут и отмена действуют и на чтение тела: прокси может отдать заголовки и зависнуть
     try {
         r = await fetch(url, { ...init, signal: ctl.signal });
+        raw = await r.text();
     } catch (e) {
         if (ctl.signal.aborted && String(ctl.signal.reason?.message) === 'timeout') throw httpError(504, 'timeout', 'Provider did not respond in time');
         if (ctl.signal.aborted) throw httpError(499, 'aborted', 'Request cancelled');
-        const code = e?.cause?.code || '';
-        throw httpError(502, /ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT/.test(code) ? 'timeout' : 'network', `Could not reach the provider${code ? ` (${code})` : ''}`);
+        const code = e?.cause?.code || e?.code || '';
+        throw httpError(502, /ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|UND_ERR_BODY_TIMEOUT/.test(code) ? 'timeout' : 'network', `Connection to the provider failed${code ? ` (${code})` : ''}`);
     } finally {
         clearTimeout(timer);
         res.off('close', onClose);
     }
-    const raw = await r.text();
     let json = null;
     try { json = raw ? JSON.parse(raw) : null; } catch { /* не JSON */ }
     if (!r.ok) {
@@ -229,8 +248,8 @@ export async function init(router) {
     // Общая копия НЕ удаляется — это отдельное действие пользователя в расширении.
     router.post('/keys/import', route(async (req, res) => {
         const { secretKey, secretId, provider, url, label } = req.body || {};
-        if (!IMPORTABLE.includes(secretKey) || !secretId) throw httpError(400, 'bad_request', 'Only api_key_custom / api_key_claude entries can be imported');
-        if (!PROVIDERS.includes(provider)) throw httpError(400, 'bad_request', 'Unknown API type');
+        if (!Object.hasOwn(IMPORTABLE, secretKey) || !secretId) throw httpError(400, 'bad_request', 'Only api_key_custom / api_key_claude entries can be imported');
+        if (IMPORTABLE[secretKey] !== provider) throw httpError(400, 'key_mismatch', `${secretKey} can only be imported for API type ${IMPORTABLE[secretKey]}`);
         const file = path.join(userRoot(req), 'secrets.json');
         const secrets = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
         const item = Array.isArray(secrets?.[secretKey]) ? secrets[secretKey].find(x => x?.id === secretId) : null;
