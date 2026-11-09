@@ -1,7 +1,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { setup, agentTurn, botReply, waitFor, isTurnCall, isReactionCall, isMemoryCall, PROFILE, MEMORY_TEXT } from './harness.mjs';
+import { setup, agentTurn, botReply, waitFor, isTurnCall, isReactionCall, isMemoryCall, PROFILE, MEMORY_TEXT, iso } from './harness.mjs';
 
 let t;
 afterEach(() => { t?.close(); t = null; });
@@ -38,8 +38,8 @@ for (const locale of ['ru', 'en']) {
             assert.ok(request);
             const system = request.body.messages[0].content;
             assert.match(system, /OUTPUT LANGUAGE:/);
-            assert.match(system, /latest substantive user-character messages/);
-            assert.match(system, /Honor an explicit request to change/);
+            assert.match(system, /being played in Russian \(detected from the latest game messages\)/);
+            assert.match(system, /Honor an explicit in-game request to switch languages/);
             assert.doesNotMatch(system, /по-русски|Ты —|Описание:/);
             assert.match(request.body.messages.map(m => m.content).join('\n'), /Боб|Мне эля/);
         }
@@ -96,4 +96,76 @@ test('English static interface has no Russian labels or tooltips', () => {
     for (const node of root.querySelectorAll('label, .aip-card-title, .aip-note, button, [title], [placeholder]')) {
         assert.doesNotMatch(node.textContent + (node.getAttribute('title') || '') + (node.getAttribute('placeholder') || ''), /[А-Яа-яЁё]/);
     }
+});
+
+// Ошибка 0.5.2: игра на английском, персона описана по-русски, интерфейс ST ru — впечатления выходили по-русски
+const EN_CHAT = () => [
+    { name: 'Алиса', is_user: false, mes: 'Welcome to the tavern, stranger! What brings you here on such a cold night?', send_date: iso(0), extra: {}, swipe_id: 0, swipes: ['x'], swipe_info: [{ send_date: iso(0), extra: {} }] },
+    { name: 'Боб', is_user: true, mes: '*steps in* "Just looking for a warm meal and a quiet corner, if you have one."', send_date: iso(10), extra: {} },
+    { name: 'Алиса', is_user: false, mes: '"A quiet corner is the one thing this place never has. Sit by the fire, I will bring you stew."', send_date: iso(20), extra: { api: 'openai', model: 'bot-model' }, swipe_id: 0, swipes: ['x'], swipe_info: [{ send_date: iso(20), extra: {} }] },
+];
+for (const locale of ['ru', 'en']) {
+    test(`English game with Russian persona and ${locale} UI: turn, impressions, and notes are requested in English`, async () => {
+        t = setup({ locale, chat: EN_CHAT(), turnReply: '*nods* "Stew sounds good. And an ale, if you have any."' });
+        t.s().memoryEvery = 1;
+        await agentTurn(t);
+        await botReply(t, '"Ale we have, and plenty of it. Three coppers, and you can tell me where you came from."');
+        await waitFor(() => t.c.chatMetadata.aip_memory?.text === MEMORY_TEXT);
+        for (const match of [isTurnCall, isReactionCall, isMemoryCall]) {
+            const system = t.calls.find(match).body.messages[0].content;
+            assert.match(system, /being played in English/);
+            assert.doesNotMatch(system, /played in Russian|interface locale \(/);
+        }
+    });
+}
+
+test('Impressions follow the language of the bot reply they react to', async () => {
+    t = setup({ locale: 'ru' });            // русская игра
+    await agentTurn(t);
+    await botReply(t, '"Fine, I will switch to English then. Three coppers for the ale, and not a coin less."');
+    await waitFor(() => t.calls.some(isReactionCall));
+    assert.match(t.calls.find(isReactionCall).body.messages[0].content, /being played in English/);
+});
+
+test('Turn keeps the language of the player messages when the bot slips into the card language', () => {
+    t = setup({ locale: 'ru' });
+    t.c.chat.push({ name: 'Боб', is_user: true, mes: '*садится у огня* «Налей мне чего-нибудь горячего, хозяйка»', send_date: iso(25), extra: {} });
+    t.c.chat.push({ name: 'Алиса', is_user: false, mes: '"Sure, the ale is on the house tonight, and the stew is fresh."', send_date: iso(30), extra: {} });
+    const turnSystem = t.aip.renderPrompt(t.s(), t.aip.getSync(), 'system');
+    assert.match(turnSystem, /being played in Russian/, 'turn follows the player, not the slipped bot reply');
+    const reactionSystem = t.aip.renderPrompt(t.s(), t.aip.getSync(), 'reaction', t.c.chat.length - 1);
+    assert.match(reactionSystem, /being played in English/, 'impressions follow the reply they react to');
+});
+
+test('Language detection by text of the game', () => {
+    t = setup();
+    const d = t.aip.detectLanguage;
+    assert.equal(d('*smiles* "Hello there, what can I get you tonight?"'), 'English');
+    assert.equal(d('*улыбается* «Привет, что тебе налить сегодня?»'), 'Russian');
+    assert.equal(d('Привіт, що тобі налити сьогодні ввечері? Їжі немає.'), 'Ukrainian');
+    // другие языки на латинице не принимаются за английский (общие слова «a», «in», «me», «was»)
+    assert.equal(d('Hola, ¿qué te sirvo esta noche, forastero cansado?'), 'latin');
+    assert.equal(d('Me dijo a ella que a veces no quiere ir a la casa de su madre.'), 'latin');
+    assert.equal(d('Was ist das? Ich bin in der Stadt an der Ecke und warte auf dich.'), 'latin');
+    assert.equal(d('Ho detto a lui che non è possibile andare in città stasera.'), 'latin');
+    assert.equal(d("Je lui ai dit que ce n'est pas possible, il est trop tard pour partir."), 'latin');
+    assert.equal(d('*Nods.* Sure thing, boss. Coming right up.'), null, 'short English without markers is undecided, not latin');
+    // другая кириллица не выдаётся за русский
+    assert.equal(d('Добро дошли у нашу крчму, путниче. Шта желиш да попијеш вечерас?'), 'cyrillic');
+    assert.equal(d('Добре дошъл в нашата кръчма, пътнико. Какво ще пиеш тази вечер?'), 'cyrillic');
+    assert.equal(d('Добро пожаловать в таверну, путник. Что будешь пить сегодня?'), 'Russian');
+    // имена и заимствования с диакритикой не мешают английскому
+    assert.equal(d('José walked into the café and ordered a crème brûlée with his friend.'), 'English');
+    // короткая японская цитата не меняет язык игры
+    assert.equal(d('Она поклонилась и сказала: «ありがとう ございます», потом ушла.'), 'Russian');
+    assert.equal(d('She bowed. "ありがとう," she said, and the door closed behind her with a soft click.'), 'English');
+    // японский с большой долей кандзи
+    assert.equal(d('東京大学図書館所蔵資料閲覧申請書提出。今日は寒い。'), 'Japanese');
+    // статус-панель на другом языке и блок размышлений не влияют
+    assert.equal(d('<div class="status">HP: 20/20 | Location: Tavern | Mood: calm and tired</div>\n*улыбается* «Садись у огня, сейчас принесу похлёбку»'), 'Russian');
+    assert.equal(d('<think>The user wants a reply in the same style as before, keep it short</think>«Садись у огня, сейчас принесу похлёбку»'), 'Russian');
+    assert.equal(d('今日はとても寒いですね。温かいスープはいかがですか。'), 'Japanese');
+    assert.equal(d('你好，今晚想喝点什么？我们有很好的酒。'), 'Chinese');
+    assert.equal(d('ok'), null, 'too short');
+    assert.equal(d('```js\nconst x = 1;\n```  <b>Да</b>'), null, 'code and markup are ignored');
 });

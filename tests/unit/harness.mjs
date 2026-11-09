@@ -25,7 +25,7 @@ const EXPOSE = `
   updateCtxMeter, playTurn, openModal, renderPrompt, matchData, setReactions, renderThoughts,
   memoryState, updateMemory, historyHash, describeError, redact, estTokens, probeVault,
   migrateProfileKey, cleanLegacyCopies, retryReaction, profileHasKey,
-  PROMPT_DEFAULTS, PLACEHOLDER_LABEL,
+  PROMPT_DEFAULTS, PLACEHOLDER_LABEL, detectLanguage, playLanguage,
 };`;
 
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -76,7 +76,7 @@ export const PROFILE = () => ({
 
 // время сообщений — ISO 8601, как getMessageTimeStamp() в ST
 const T0 = Date.parse('2026-11-08T12:00:00.000Z');
-const iso = sec => new Date(T0 - 3600_000 + sec * 1000).toISOString();
+export const iso = sec => new Date(T0 - 3600_000 + sec * 1000).toISOString();
 
 export const defaultChat = () => [
     { name: 'Алиса', is_user: false, mes: 'Добро пожаловать в таверну!', send_date: iso(0), extra: {}, swipe_id: 0, swipes: ['Добро пожаловать в таверну!'], swipe_info: [{ send_date: iso(0), extra: {} }] },

@@ -7,7 +7,7 @@
 One model plays your character. Another plays their scene partner.<br>
 Choose the models, shape the style, and watch the story unfold.
 
-![Version 0.5.2](https://img.shields.io/badge/version-0.5.2-e99a25?style=flat-square)
+![Version 0.5.3](https://img.shields.io/badge/version-0.5.3-e99a25?style=flat-square)
 ![SillyTavern extension](https://img.shields.io/badge/SillyTavern-extension-555?style=flat-square)
 [![MIT license](https://img.shields.io/badge/license-MIT-75b798?style=flat-square)](LICENSE)
 
@@ -29,7 +29,7 @@ Use it to experiment with models, compare roleplaying styles, or see how a scene
 
 - **Interface:** follows the language selected in SillyTavern. Russian and English are supported; other interface languages use English. Changing ST's language takes effect after its normal page reload.
 - **Built-in prompts:** written in English, including the combined style, Actor, Director, Anti-cliché, impressions, and memory instructions.
-- **Language of play:** the model is instructed to follow the user's recent in-character messages, or the current scene if the user has not spoken yet. It can continue in Russian, English, Ukrainian, or another language regardless of the interface language.
+- **Language of play:** the extension detects it from the latest chat messages and names it explicitly to the model. Turns follow your character's recent messages first; impressions follow the bot reply (or the messages just before it). Example: "the game is being played in English". The language of the persona, card, or ST interface does not affect the choice. English, Russian, Ukrainian, Japanese, Chinese, Korean, Arabic, Greek, and Hebrew are recognized; for other Latin- or Cyrillic-script languages (Spanish, German, Serbian, Bulgarian…) the model is told to use the same language as the messages.
 - **Impressions and notes:** use the language of play too. When no game language can be inferred, the ST interface locale is the fallback.
 
 An explicit request to change the language of play takes priority. Language choice is handled by the model, not by automatic translation of your chat. Model compliance can vary. Your persona, card, custom instructions, and existing messages are preserved as entered.

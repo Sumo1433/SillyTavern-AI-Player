@@ -76,7 +76,7 @@ export async function updateMemory({ upTo, manual = false } = {}) {
     const p = findProfile(lastAgent?.extra.aip.profileId) || activeProfile();
     if (!p?.model) { if (manual) toastr.warning(ui("Укажите модель в окне AI Player")); return false; }
     const sync = getSync();
-    const system = renderPrompt(s, sync, 'memory');
+    const system = renderPrompt(s, sync, 'memory', end);
     const endDate = chat[end]?.send_date ?? null;
     // ---- бюджет (п. 3): фактический лимит ответа, системный промпт с правилом языка, прежние
     // записи целиком (их не режем), служебный текст и запас на разметку сообщений

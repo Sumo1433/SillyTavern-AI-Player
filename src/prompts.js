@@ -44,7 +44,7 @@ export function wordRange(s) {
 
 export const getPrompt = (s, k) => (s.prompts?.[k] || '').trim() || PROMPT_DEFAULTS[k];
 
-function promptVars(s, sync) {
+function promptVars(s, sync, upTo = Infinity, preferUser = true) {
     const { personaName: P, personaDesc, card, isGroup } = sync;
     const C = card.name;
     const [lo, hi] = wordRange(s);
@@ -56,7 +56,7 @@ function promptVars(s, sync) {
         persona: s.roleOverride || personaDesc || promptText("(описание не задано — выстрой характер из хода игры и оставайся последовательным)"),
         card: [promptText`Описание: ${card.description || '—'}`, card.personality ? promptText`Характер: ${card.personality}` : '', promptText`Сценарий: ${card.scenario || '—'}`].filter(Boolean).join('\n'),
         scenario: card.scenario || '—',
-        language_rule: languageRule(),
+        language_rule: languageRule(upTo, { preferUser }),
         extra: s.extraInstructions ? promptText`\nДОПОЛНИТЕЛЬНЫЕ УКАЗАНИЯ ИГРОКУ:\n${s.extraInstructions}\n` : '',
         knowledge_rule: s.knowledge === 'scene'
             ? promptText`Описание мира и ${them} выше — знание ведущего. «${P}» знает только то, что сам видел, слышал или мог знать по своей биографии. Скрытое не используй.`
@@ -65,12 +65,14 @@ function promptVars(s, sync) {
     };
 }
 
-export function renderPrompt(s, sync, key) {
-    const vars = promptVars(s, sync);
+// upTo — последнее сообщение, по которому определяется язык игры (для впечатлений и записей)
+export function renderPrompt(s, sync, key, upTo = Infinity) {
+    // ход агента держится языка сообщений за персонажа; впечатления и записи — языка последних сообщений игры
+    const vars = promptVars(s, sync, upTo, key === 'system' || key === 'turn');
     // {name} — плейсхолдеры расширения; {{name}} не трогаем — это макросы ST
     let t = getPrompt(s, key).replace(/(?<!\{)\{(\w+)\}(?!\})/g, (m, k) => (k in vars ? String(vars[k]) : m));
     try { t = ctx().substituteParams?.(t) ?? t; } catch { /* без макросов ST */ }
-    return t.replace(/\n{3,}/g, '\n\n').trim() + '\n\n' + languageRule();
+    return t.replace(/\n{3,}/g, '\n\n').trim() + '\n\n' + vars.language_rule;
 }
 
 // Системный промпт хода + записи игрока (если память включена и записи есть)

@@ -9,7 +9,7 @@ import { appendThought, setReactions } from './ui-thoughts.js';
 export let reactCtl = null;          // запрос «впечатлений» — отменяется при смене чата и их выключении
 export const reacted = new Set();
 
-const buildReactionPrompt = (s, sync) => renderPrompt(s, sync, 'reaction');
+const buildReactionPrompt = (s, sync, upTo) => renderPrompt(s, sync, 'reaction', upTo);
 
 // Последние n сообщений игры до сообщения upTo включительно (по умолчанию — до конца чата)
 function transcript(n = 6, upTo = Infinity) {
@@ -50,7 +50,7 @@ export async function onBotMessage(id) {
     const signal = reactCtl.signal;
     setReactionFailure(null);
     try {
-        const res = await callModel(p, s, buildReactionPrompt(s, sync),
+        const res = await callModel(p, s, buildReactionPrompt(s, sync, id),
             [{ role: 'user', content: promptText`Последние сообщения игры:\n\n${transcript(6, id)}\n\n[Что у тебя в голове об игре после ответа «${snap.bot}»?]` }],
             { maxTokens: reactionMaxTokens(p), signal });
         if (chatId() !== id0 || signal.aborted) { reacted.delete(key); return; }
