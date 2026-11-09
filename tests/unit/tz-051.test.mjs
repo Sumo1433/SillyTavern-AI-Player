@@ -463,3 +463,98 @@ test('V3. Без плагина активный ключ таверны и кл
     assert.ok(!t.calls.some(c => isSecretCall(c, 'delete')));
     assert.equal(t.secrets.api_key_custom.length, 2);
 });
+
+// ================================================================ п.19 ревью — профили, работавшие на ключе таверны
+test('T1. Плагин: профиль без ключа (до 0.5.1 шёл на ключе таверны) — ключ таверны копируется на сервере по явной кнопке', async () => {
+    t = setup({ plugin: true, extensionSettings: settingsWith([{ ...PROFILE(), secretId: null }]) });
+    await ready();
+    const before = secretsSnapshot();
+    t.click('#aip_menu');
+    await waitFor(() => !t.$('#aip_keyAdopt').classList.contains('aip-hidden'), { msg: 'кнопка «Взять ключ таверны»' });
+    assert.match(t.$('#aip_keyState').textContent, /Взять ключ из подключения таверны/);
+    t.click('#aip_keyAdopt');
+    await waitFor(() => t.s().profiles[0].keyId, { msg: 'ключ взят' });
+    const imp = t.calls.find(c => isPluginCall(c, 'keys/import'));
+    assert.equal(imp.body.secretId, 't1');
+    assert.equal(t.vault.keys[0].value, 'sk-tavern-key-2222');
+    assert.ok(t.confirms.some(m => /активный в основном подключении/.test(m)), 'спрошено подтверждение');
+    assert.equal(secretsSnapshot(), before, 'secrets.json и активный ключ таверны не изменились');
+    assert.ok(!JSON.stringify(t.calls).includes('sk-tavern-key-2222'), 'значение ключа не проходит через браузер');
+    await waitFor(() => t.$('#aip_keyAdopt').classList.contains('aip-hidden'), { msg: 'кнопка скрыта после привязки' });
+});
+
+test('T2. Без плагина: профиль привязывается к записи ключа таверны; удаление только отвязывает', async () => {
+    t = setup({ extensionSettings: settingsWith([{ ...PROFILE(), secretId: null }]) });
+    await ready();
+    t.click('#aip_menu');
+    await waitFor(() => !t.$('#aip_keyAdopt').classList.contains('aip-hidden'), { msg: 'кнопка' });
+    t.click('#aip_keyAdopt');
+    await waitFor(() => t.s().profiles[0].secretId === 't1', { msg: 'привязан' });
+    assert.ok(!t.calls.some(c => isSecretCall(c, 'write') || isSecretCall(c, 'rotate')), 'основное подключение не меняется');
+    // таверна переключилась на другой ключ — профиль остаётся на своей записи, а удаление её не трогает
+    t.secrets.api_key_custom.find(x => x.id === 't1').active = false;
+    t.secrets.api_key_custom.find(x => x.id === 'k1').active = true;
+    await sleep(20);
+    t.click('#aip_keyDel');
+    await waitFor(() => t.s().profiles[0].secretId === null, { msg: 'отвязан' });
+    assert.ok(!t.calls.some(c => isSecretCall(c, 'delete')), 'ключ таверны не удалён');
+    assert.ok(t.secrets.api_key_custom.some(x => x.id === 't1'));
+});
+
+test('T3. Кнопки нет, если в таверне активна заглушка или ключ расширения', async () => {
+    t = setup({
+        extensionSettings: settingsWith([{ ...PROFILE(), secretId: null }, { ...PROFILE(), id: 'p2', name: 'Свой' }]),
+        secrets: { api_key_custom: [{ id: 'k1', label: 'AI Player · Тест', value: 'sk-aip-1111', active: false }, { id: 'ph', label: t0PH(), value: '', active: true }] },
+    });
+    await ready();
+    t.click('#aip_menu');
+    await sleep(40);
+    assert.ok(t.$('#aip_keyAdopt').classList.contains('aip-hidden'), 'заглушка не предлагается');
+    t.secrets.api_key_custom.find(x => x.id === 'ph').active = false;
+    t.secrets.api_key_custom.find(x => x.id === 'k1').active = true;
+    t.click('#aip_menu'); t.click('#aip_menu');
+    await sleep(40);
+    assert.ok(t.$('#aip_keyAdopt').classList.contains('aip-hidden'), 'ключ расширения не предлагается');
+});
+function t0PH() { return 'Пусто — заглушка AI Player (ключ таверны не задан)'; }
+
+test('T4. Без плагина: удаление профиля, привязанного к ключу таверны, не удаляет ключ из таверны (даже если он уже не активен)', async () => {
+    t = setup({ extensionSettings: settingsWith([{ ...PROFILE(), secretId: 't1' }, { ...PROFILE(), id: 'p2', name: 'Второй' }]) });
+    t.secrets.api_key_custom.find(x => x.id === 't1').active = false;
+    t.secrets.api_key_custom.find(x => x.id === 'k1').active = true;
+    await ready();
+    t.click('#aip_menu');
+    await waitFor(() => /привязан к ключу таверны/.test(t.$('#aip_keyState').textContent), { msg: 'текст про ключ таверны' });
+    t.click('#aip_profDel');
+    await waitFor(() => t.s().profiles.length === 1, { msg: 'профиль удалён' });
+    assert.ok(!t.confirms.some(m => /и его ключ/.test(m)), 'не предлагается удалить ключ');
+    assert.ok(!t.calls.some(c => isSecretCall(c, 'delete')), 'ключ таверны не удалён');
+    assert.ok(t.secrets.api_key_custom.some(x => x.id === 't1'));
+});
+
+test('T5. Плагин поставили после привязки к ключу таверны: понятный текст, перенос копирует, очистка ключ таверны не трогает', async () => {
+    t = setup({ plugin: true, extensionSettings: settingsWith([{ ...PROFILE(), secretId: 't1' }]) });
+    await ready();
+    t.click('#aip_menu');
+    await waitFor(() => /привязан к ключу таверны/.test(t.$('#aip_keyState').textContent), { msg: 'текст про ключ таверны' });
+    assert.match(t.$('#aip_keySelect').options[0].textContent, /Ключ таверны/);
+    t.click('#aip_keyMigrate');
+    await waitFor(() => t.s().profiles[0].keyId, { msg: 'перенесён' });
+    await waitFor(() => t.toasts.some(x => /остался как был/.test(x.msg)), { msg: 'тост про ключ таверны' });
+    assert.equal(t.s().profiles[0].legacySecretId, undefined, 'ключ таверны не считается «старой копией»');
+    t.click('#aip_legacyClean');
+    await sleep(40);
+    assert.ok(!t.calls.some(c => isSecretCall(c, 'delete') && c.body?.id === 't1'), 'очистка не удаляет ключ таверны');
+    assert.ok(t.secrets.api_key_custom.some(x => x.id === 't1'));
+});
+
+test('T6. Ключ таверны сменился на заглушку до нажатия — понятное сообщение, профиль не меняется', async () => {
+    t = setup({ extensionSettings: settingsWith([{ ...PROFILE(), secretId: null }]) });
+    await ready();
+    t.click('#aip_menu');
+    await waitFor(() => !t.$('#aip_keyAdopt').classList.contains('aip-hidden'), { msg: 'кнопка' });
+    t.secrets.api_key_custom.find(x => x.id === 't1').active = false;
+    t.click('#aip_keyAdopt');
+    await waitFor(() => t.toasts.some(x => /не выбран подходящий ключ/.test(x.msg)), { msg: 'сообщение' });
+    assert.equal(t.s().profiles[0].secretId, null);
+});

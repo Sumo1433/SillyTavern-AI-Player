@@ -5,7 +5,7 @@ import { OLD_REACTION_MARK } from './prompts-en.js';
 // Общее ядро: версия, типы подключений, настройки по умолчанию, доступ к контексту ST, профили.
 
 const MODULE = 'ai_player';
-export const VERSION = '0.5.1';
+export const VERSION = '0.5.2';
 // ID из списка SillyTavern 1.19 + актуальные
 export const CLAUDE_MODELS = ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5-5', 'claude-sonnet-5', 'claude-haiku-5-5'];
 export const SOURCE = {

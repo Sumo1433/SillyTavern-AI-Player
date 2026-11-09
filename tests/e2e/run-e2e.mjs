@@ -798,6 +798,7 @@ try {
         await waitFor(() => ctxEval(() => /^[✔✖]/.test(document.getElementById('aip_status').textContent)), 20000, 200, 'результат «Тест»');
         const status = await ctxEval(() => document.getElementById('aip_status').textContent);
         const keyState = await ctxEval(() => document.getElementById('aip_keyState').textContent);
+        const adoptShown = await ctxEval(() => !document.getElementById('aip_keyAdopt').classList.contains('aip-hidden'));
         const fresh = readMock().slice(n0), g1 = genCount(), len1 = await chatLen();
         // профилю 3 даём старый первый ключ расширения — он понадобится в фазе B (копия, выбранная в профиле без переноса)
         const k1 = customSlots().find(x => x.value === KEY);
@@ -814,7 +815,9 @@ try {
         check(len1 === len0, 'в чат что-то добавилось');
         check(warn, `нет предупреждения «Сохраните API-ключ»: ${JSON.stringify(toasts)}`);
         check(status.startsWith('✖') && /ключ/i.test(status), `«Тест»: ${status}`);
-        check(/ключ основного подключения таверны AI Player не использует/i.test(keyState), `пояснение у ключа: ${keyState}`);
+        check(/Сам AI Player ключ основного подключения таверны не берёт/i.test(keyState), `пояснение у ключа: ${keyState}`);
+        // 0.5.2: у таверны есть свой ключ — профилю предлагается явно взять его (без нажатия ничего не меняется)
+        check(adoptShown && /Взять ключ из подключения таверны/.test(keyState), `нет кнопки «Взять ключ из подключения таверны»: ${keyState}`);
         check(p3b.secretId === k1.id, 'профилю 3 не назначен старый ключ');
         return { toast: warn.text, test: status, mockRequests: 0 };
     });

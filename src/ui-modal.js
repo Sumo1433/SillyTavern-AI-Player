@@ -4,7 +4,7 @@ import { CLAUDE_MODELS, GLOBAL_CHECKS, GLOBAL_FIELDS, PROFILE_FIELDS, SOURCE, ac
 import { AipError, describeError } from './errors.js';
 import { exportJSON, exportMD } from './export.js';
 import { promptText, ui } from './i18n.js';
-import { PLUGIN_VERSION, cleanLegacyCopies, deleteProfileKey, isAipKey, keyName, migrateProfileKey, needsMigration, pluginOutdated, probeVault, profileHasKey, saveProfileKey, secretState, sharedKeyGuard, slotList, vault, vaultBase, vaultCall, vaultKeys } from './keys.js';
+import { PLUGIN_VERSION, adoptTavernKey, cleanLegacyCopies, isTavernOwnKey, deleteProfileKey, isAipKey, keyName, migrateProfileKey, needsMigration, pluginOutdated, probeVault, profileHasKey, saveProfileKey, secretState, sharedKeyGuard, slotList, tavernActiveKey, vault, vaultBase, vaultCall, vaultKeys } from './keys.js';
 import { memBusy, memCtl, onMemoryInput, renderMemory, updateMemory } from './memory.js';
 import { getPrompt, getSync, renderPrompt, syncPreviewText } from './prompts.js';
 import { PLACEHOLDERS, PROMPT_DEFAULTS, PROMPT_LABELS, PROMPT_PRESETS } from './prompts-en.js';
@@ -71,6 +71,7 @@ export function buildModal() {
             </details>
             <div class="aip-note" id="aip_keyState">…</div>
             <div class="aip-actions">
+              <button type="button" class="menu_button aip-hidden" id="aip_keyAdopt"><i class="fa-solid fa-key"></i> ${ui("Взять ключ из подключения таверны")}</button>
               <button type="button" class="menu_button aip-hidden" id="aip_keyMigrate"><i class="fa-solid fa-right-left"></i> ${ui("Перенести в хранилище AI Player")}</button>
               <button type="button" class="menu_button aip-hidden" id="aip_legacyClean"><i class="fa-solid fa-broom"></i> ${ui("Удалить старые общие копии")}</button>
             </div>
@@ -218,8 +219,12 @@ export function buildModal() {
         if (dropKey && ref === 'secretId') {
             if (vault.ok) dropKey = false;
             else {
-                try { guard = sharedKeyGuard(slotList(await secretState(), srcOf(p).secret).find(x => x.id === p.secretId)); }
-                catch { guard = ui("Не удалось проверить, используется ли ключ в таверне, — он не удалён."); }
+                try {
+                    const item = slotList(await secretState(), srcOf(p).secret).find(x => x.id === p.secretId);
+                    // ключ самой таверны, к которому профиль привязали явно, — не удаляем, только отвязываем
+                    if (item && !isAipKey(item)) dropKey = false;
+                    else guard = sharedKeyGuard(item);
+                } catch { guard = ui("Не удалось проверить, используется ли ключ в таверне, — он не удалён."); }
                 if (guard) dropKey = false;
             }
         }
@@ -350,8 +355,24 @@ export function buildModal() {
     };
     $('#aip_keyMigrate').onclick = async () => {
         try {
-            if (await migrateProfileKey(activeProfile())) toastr.success(ui("Ключ перенесён в хранилище AI Player. Старая общая копия пока осталась в менеджере ключей таверны — удалите её кнопкой «Удалить старые общие копии», когда перенесёте все профили."), 'AI Player', { timeOut: 9000 });
+            const p = activeProfile();
+            const tavernOwn = await isTavernOwnKey(p);
+            if (await migrateProfileKey(p)) toastr.success(tavernOwn
+                ? ui("Ключ таверны скопирован в хранилище AI Player. В таверне он остался как был — AI Player его не удаляет.")
+                : ui("Ключ перенесён в хранилище AI Player. Старая общая копия пока осталась в менеджере ключей таверны — удалите её кнопкой «Удалить старые общие копии», когда перенесёте все профили."), 'AI Player', { timeOut: 9000 });
         } catch (e) { toastr.error(describeError(e, 'keys')); }
+        refreshKeyState();
+    };
+    $('#aip_keyAdopt').onclick = async e => {
+        const btn = e.currentTarget;
+        if (btn.disabled) return;
+        btn.disabled = true;
+        try {
+            const r = await adoptTavernKey(activeProfile());
+            if (r === true) toastr.success(vault.ok ? ui("Ключ таверны скопирован в хранилище AI Player и выбран в профиле.") : ui("Профиль привязан к ключу таверны."), 'AI Player');
+            else if (r === null) toastr.info(ui("В основном подключении таверны сейчас не выбран подходящий ключ — добавьте ключ профилю вручную."), 'AI Player');
+        } catch (e) { toastr.error(describeError(e, 'keys')); }
+        finally { btn.disabled = false; }
         refreshKeyState();
     };
     $('#aip_legacyClean').onclick = async () => {
@@ -469,7 +490,7 @@ function applyKeyLayout(p) {
         return;
     }
     box.replaceChildren(
-        document.createTextNode(ui("⚠ Плагин AI Player не установлен. Ключи хранятся в общем хранилище SillyTavern (secrets.json) и видны в менеджере ключей основного подключения. Для полной изоляции установите серверный плагин и перезапустите таверну:")),
+        document.createTextNode(ui("ℹ Плагин AI Player не установлен — это необязательно, расширение полностью работает и без него. Ключи хранятся в общем хранилище SillyTavern (secrets.json) и видны в менеджере ключей основного подключения. Плагин нужен только для отдельного хранения ключей; если вы доверяете тем, у кого есть доступ к вашей таверне, его можно не ставить. Установка (затем перезапустите таверну):")),
         Object.assign(document.createElement('br')),
         Object.assign(document.createElement('code'), { textContent: 'cp -r data/default-user/extensions/SillyTavern-AI-Player/server-plugin plugins/ai-player' }),
         Object.assign(document.createElement('br')),
@@ -478,28 +499,35 @@ function applyKeyLayout(p) {
     );
 }
 
+// Каждый вызов получает номер; после await результат устаревшего вызова отбрасывается,
+// чтобы два параллельных обновления не дописывали текст друг другу.
+let keyStateGen = 0;
 async function refreshKeyState() {
+    const gen = ++keyStateGen;
     const p = activeProfile();
     const prov = p.provider;
     const el = document.getElementById('aip_keyState');
     const sel = document.getElementById('aip_keySelect');
+    const stale = () => gen !== keyStateGen || activeProfile() !== p || p.provider !== prov;
     if (!vault.checked) await probeVault();
-    if (activeProfile() !== p || p.provider !== prov) return;
+    if (stale()) return;
     applyKeyLayout(p);
     const migrateBtn = document.getElementById('aip_keyMigrate');
     const cleanBtn = document.getElementById('aip_legacyClean');
+    const adoptBtn = document.getElementById('aip_keyAdopt');
     migrateBtn.classList.toggle('aip-hidden', !needsMigration(p));
+    adoptBtn.classList.add('aip-hidden');
     cleanBtn.classList.toggle('aip-hidden', !vault.ok);
     if (srcOf(p).proxy && !vault.ok) {            // общий режим: у прокси нет ключей, только пароль в профиле
         updateChip(p.url && p.proxyPassword && !p.keyId ? 'ok' : 'none');
         return;
     }
     const opt = (value, text) => Object.assign(document.createElement('option'), { value, textContent: text });
-    let failed = false, legacy = false, items = [], has = false, count = 0, mismatch = false;
+    let failed = false, legacy = false, items = [], has = false, count = 0, mismatch = false, tavernOwn = false;
     if (vault.ok) {
         let list = [];
         try { list = await vaultKeys(p.provider); } catch { failed = true; }
-        if (activeProfile() !== p || p.provider !== prov) return;
+        if (stale()) return;
         // ключ точно удалён (плагин ответил нормально, а ключа нет) — сбрасываем выбор
         if (!failed && p.keyId && !list.some(k => k.id === p.keyId)) { p.keyId = null; settings().save(); }
         const base = vaultBase(p);
@@ -507,7 +535,12 @@ async function refreshKeyState() {
         mismatch = !!p.keyId && list.find(k => k.id === p.keyId)?.base !== base;
         count = list.length;
         has = !!p.keyId;
-        if (!p.keyId && p.secretId) items.unshift(opt('__legacy', ui("↪ Старый общий ключ (не перенесён)")));
+        if (!p.keyId && p.secretId) {
+            // старый ключ профиля может быть собственным ключом таверны (привязан кнопкой «Взять ключ…»)
+            tavernOwn = await isTavernOwnKey(p);
+            if (stale()) return;
+            items.unshift(opt('__legacy', tavernOwn ? ui("↪ Ключ таверны (не скопирован в AI Player)") : ui("↪ Старый общий ключ (не перенесён)")));
+        }
         else if (!p.keyId && list.length) items.unshift(opt('', ui("— выберите ключ —")));
         if (!list.length && !p.secretId) items.push(opt('__none', ui("— ключей нет, добавьте ниже —")));
         sel.replaceChildren(...items);
@@ -516,7 +549,7 @@ async function refreshKeyState() {
     } else {
         let list = [];
         try { list = slotList(await secretState(), srcOf(p).secret); } catch { failed = true; }
-        if (activeProfile() !== p || p.provider !== prov) return;
+        if (stale()) return;
         if (!failed) {
             legacy = list.some(x => x.legacy);
             if (p.secretId && !list.some(x => x.id === p.secretId)) { p.secretId = null; settings().save(); }
@@ -533,24 +566,38 @@ async function refreshKeyState() {
         if (!mine.length && !failed) document.getElementById('aip_addKey').open = true;
         count = mine.length;
         has = !!p.secretId && !p.keyId;
+        tavernOwn = has && list.some(x => x.id === p.secretId && !isAipKey(x));
     }
     sel.disabled = legacy || failed;
     const state = failed || !has ? 'none' : 'ok';
     updateChip(state);
     el.dataset.state = state;
-    el.textContent = failed
+    let text = failed
         ? (vault.ok ? ui("⚠ Не удалось прочитать хранилище плагина AI Player. Выбор ключа сохранён; попробуйте открыть окно ещё раз.")
             : ui("⚠ Не удалось прочитать хранилище ключей SillyTavern. Выбор ключа сохранён; попробуйте открыть окно ещё раз."))
         : !vault.ok && p.keyId
             ? ui("⚠ Профиль привязан к ключу из плагина AI Player, а плагин сейчас недоступен. Верните плагин или выберите здесь другой ключ.")
+        : needsMigration(p) && tavernOwn
+            ? ui("↪ Профиль привязан к ключу таверны в общем хранилище SillyTavern. Нажмите «Перенести в хранилище AI Player»: плагин скопирует ключ на сервере, в браузер он не попадёт. В таверне ключ останется как был — AI Player его не удаляет.")
         : needsMigration(p)
             ? ui("↪ Профиль пока использует старый ключ из общего хранилища SillyTavern — он виден в менеджере ключей таверны. Нажмите «Перенести в хранилище AI Player»: плагин скопирует ключ на сервере, в браузер он не попадёт. Общая копия останется, пока вы её не удалите.")
             : mismatch
                 ? ui("⚠ Выбранный ключ сохранён для другого адреса API. Плагин не отправит его на новый адрес — добавьте ключ для этого адреса.")
                 : has
                     ? (vault.ok ? ui`🔒 Выбран ключ из хранилища AI Player (ключей этого типа: ${count}).`
+                        : tavernOwn ? ui("🔑 Профиль привязан к ключу таверны из общего secrets.json SillyTavern. Если сменить ключ в панели API таверны, профиль останется на этом ключе. AI Player этот ключ не удаляет — кнопка удаления только отвяжет его от профиля.")
                         : ui`🔑 Выбран ключ расширения (всего ключей расширения: ${count}). Он хранится в общем secrets.json SillyTavern на сервере и виден в менеджере ключей таверны; в браузер приходит только маска (если в config.yaml не включён allowKeysExposure).`)
-                    : ui("⚠ У профиля нет своего ключа — выберите или добавьте ключ. Ключ основного подключения таверны AI Player не использует.");
+                    : ui("⚠ У профиля нет своего ключа — выберите или добавьте ключ. Сам AI Player ключ основного подключения таверны не берёт.");
+    // профили из версий до 0.5.1 работали на ключе таверны — предлагаем явно взять его в профиль
+    if (!failed && !has && !p.keyId && !p.secretId) {
+        const tav = await tavernActiveKey(p);
+        if (stale() || p.keyId || p.secretId) return;
+        if (tav) {
+            adoptBtn.classList.remove('aip-hidden');
+            text += ' ' + ui("Если раньше профиль работал на ключе таверны, нажмите «Взять ключ из подключения таверны».");
+        }
+    }
+    el.textContent = text;
 }
 
 export async function refreshSync() {

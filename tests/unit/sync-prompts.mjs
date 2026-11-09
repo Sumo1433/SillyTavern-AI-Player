@@ -18,7 +18,14 @@ export async function promptDocs() {
         ...['system', 'turn', 'reaction', 'memory'].flatMap(k => [`## ${k}`, '', PROMPT_DEFAULTS[k], '']),
     ].join('\n');
     for (const [name, p] of Object.entries(PROMPT_PRESETS)) {
-        docs[`prompts/drafts/${name}.md`] = [`# ${name}`, '', NOTE, '', p.system, '', '## Turn reminder', '', p.turn, ''].join('\n');
+        docs[`prompts/drafts/${name}.md`] = [
+            `# ${name}`, '', NOTE, '', p.system, '', '## Turn reminder', '', p.turn, '',
+            '## Impressions (reaction)', '',
+            'Shared by all presets and the combined prompt: presets differ only in play style, not in how the player shares impressions.', '',
+            p.reaction, '',
+            '## Character notes (memory)', '',
+            'Shared by all presets: applying a preset resets the memory prompt to the built-in one. See `prompts/final.md`, section `memory`.', '',
+        ].join('\n');
     }
     return docs;
 }

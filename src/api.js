@@ -58,7 +58,7 @@ export async function callModel(p, s, system, messages, { maxTokens, signal, sto
             }
             return { text: String(j.text || ''), usage: j.usage ?? null, truncated: !!j.truncated };
         }
-        if (!src.proxy && !p.secretId) throw new AipError('no_key', ui("У профиля нет своего ключа. Добавьте ключ в окне AI Player — ключ основного подключения таверны не используется."));
+        if (!src.proxy && !p.secretId) throw new AipError('no_key', ui("У профиля нет своего ключа. Сам AI Player ключ основного подключения таверны не берёт — добавьте ключ в окне AI Player или нажмите там «Взять ключ из подключения таверны»."));
         const body = {
             chat_completion_source: src.source,
             model: p.model,

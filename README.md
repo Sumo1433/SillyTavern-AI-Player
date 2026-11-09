@@ -7,13 +7,13 @@
 One model plays your character. Another plays their scene partner.<br>
 Choose the models, shape the style, and watch the story unfold.
 
-![Version 0.5.1](https://img.shields.io/badge/version-0.5.1-e99a25?style=flat-square)
+![Version 0.5.2](https://img.shields.io/badge/version-0.5.2-e99a25?style=flat-square)
 ![SillyTavern extension](https://img.shields.io/badge/SillyTavern-extension-555?style=flat-square)
 [![MIT license](https://img.shields.io/badge/license-MIT-75b798?style=flat-square)](LICENSE)
 
 **English** · [Русский](README.ru.md)
 
-[Install](#installation) · [Key plugin](#server-key-plugin-recommended) · [First turn](#your-first-turn) · [Features](#features) · [Limitations](#known-limitations) · [FAQ](#faq)
+[Install](#installation) · [Key plugin](#server-key-plugin-optional) · [First turn](#your-first-turn) · [Features](#features) · [Limitations](#known-limitations) · [FAQ](#faq)
 
 </div>
 
@@ -70,11 +70,13 @@ Copy the extension folder into `SillyTavern/data/default-user/extensions/` and r
 
 **Compatibility:** requires a SillyTavern version with `SillyTavern.getContext()` and ES-module extensions. Tested on **1.19.0**; compatibility with other versions may vary. The server plugin needs Node.js 18 or newer, as SillyTavern itself does.
 
-### Server key plugin (recommended)
+### Server key plugin (optional)
+
+> **The plugin is optional.** The extension works fully without it: every feature, model, and profile is available. The plugin only adds security for the API keys you enter in AI Player by storing them separately from Tavern's keys. If you trust your Tavern and everyone who can access it (for example, it runs only on your own PC or phone), you don't need the plugin.
 
 The extension you install with **Install extension** runs only in the browser and cannot create its own key storage on the server. Without the plugin, AI Player keys live in SillyTavern's shared `secrets.json` and **appear in the main connection's key manager**. The plugin keeps keys and Claude proxy passwords in the ST user's data folder, `data/<user>/ai-player/keys.json`, and sends model requests itself. Extension keys never show up in Tavern's key manager and are never sent to the browser.
 
-SillyTavern intentionally does not install server plugins together with extensions, because a plugin runs code on the server. Install the plugin once, manually:
+SillyTavern intentionally does not install server plugins together with extensions, because a plugin runs code on the server. If you decide to use the plugin, install it once, manually:
 
 1. Copy the extension's `server-plugin` folder to `SillyTavern/plugins/ai-player`.
 2. Set `enableServerPlugins: true` in SillyTavern's `config.yaml`.
@@ -101,12 +103,12 @@ An extension installed for all users lives in `public/scripts/extensions/third-p
 
 </details>
 
-The **Connection** tab shows whether the plugin is active: "🔒 AI Player plugin … is installed", or "⚠ The AI Player plugin is not installed" with the same commands. You can install the plugin later; the extension works without it in shared mode.
+The **Connection** tab shows whether the plugin is active: "🔒 AI Player plugin … is installed", or "ℹ The AI Player plugin is not installed" with the same commands. The second note is not an error: the extension runs in shared mode. You can install the plugin later.
 
 ## Your first turn
 
 1. Open a character or group chat and select your persona.
-2. In AI Player settings, choose the connection type, enter the API URL if needed, and save a key or proxy password. Each profile needs a key **of its own**: AI Player never uses Tavern's main connection key.
+2. In AI Player settings, choose the connection type, enter the API URL if needed, and save a key or proxy password. Each profile needs a key **of its own**: AI Player does not take Tavern's main connection key on its own.
 3. Choose a model or enter its ID. Click **Test**.
 4. Press **▶** near the input field to generate a turn for your persona.
 5. With auto-send enabled, the turn is sent to chat. If Tavern's main API is connected, the bot replies as usual.
@@ -191,16 +193,16 @@ History trimming uses an approximate token estimate. The meter also uses ST's to
 <details>
 <summary><b>Keys and proxy passwords</b></summary>
 
-In every mode, AI Player never uses Tavern's main connection key. A profile without its own key sends no requests and asks you to add one. Keys are never written to extension settings or exports.
+AI Player never takes Tavern's main connection key on its own: a profile without its own key sends no requests and asks you to add one. Tavern's key is used only if you bind it to a profile yourself with **Use Tavern's connection key**. Keys are never written to extension settings or exports.
 
-**With the server plugin** (recommended):
+**With the server plugin** (optional, for separate key storage):
 
 - Keys and Claude proxy passwords are stored in `data/<user>/ai-player/keys.json` on the server, separately for each ST user.
 - Adding, selecting, or deleting a key or profile never changes Tavern's key list or its active main key.
 - The plugin sends model requests. The browser passes only a key ID; the key value never reaches the browser.
 - Each key is bound to the API type and address it was saved with. If you change a profile's address, the plugin will not send the old key there; add a key for the new address.
 
-**Without the plugin** (shared mode, marked "⚠ The AI Player plugin is not installed"):
+**Without the plugin** (shared mode, marked "ℹ The AI Player plugin is not installed"):
 
 - Keys are saved in SillyTavern's shared `secrets.json` with the **AI Player** label, so they appear in the main connection's key manager. Under standard ST settings the browser receives masked values; this depends on `allowKeysExposure` in `config.yaml`.
 - SillyTavern makes every new key active for the whole Tavern, so the extension immediately restores Tavern's previous active key. If Tavern had no key of its own, an empty "AI Player placeholder" is set instead; keep it until you add a main Tavern key.
@@ -209,11 +211,13 @@ In every mode, AI Player never uses Tavern's main connection key. A profile with
 
 **Moving to the plugin.** After the plugin is installed, profiles with old keys keep working. A **Move to AI Player storage** button appears next to the key: the plugin copies the key from `secrets.json` on the server, and it never reaches the browser. Proxy passwords move from settings into plugin storage the same way. Old shared copies are not deleted automatically, because something else may still use them. Once all profiles are moved, click **Delete old shared copies**. The extension lists them and asks for confirmation. It removes only copies that are not active in the main connection and not selected by any profile that was not moved. Tavern's main connection does not change.
 
+**Profiles from versions before 0.5.1.** A profile without its own key used to fall back to the key active in Tavern's main connection. That no longer happens, so such a profile shows "no key of its own". If Tavern has a real key of the matching type selected (Custom OpenAI-compatible or Claude) and SillyTavern stores several keys per provider, as 1.19 does, a **Use Tavern's connection key** button appears. With the plugin, the key is copied into AI Player storage on the server and never reaches the browser. Without the plugin, the profile is bound to that `secrets.json` entry: if you later switch keys in Tavern's API panel, the profile stays on the old one. Either way Tavern's main connection does not change, and such a key is never deleted from Tavern: without the plugin, the key and profile delete buttons only unbind it; with the plugin, only the copy in AI Player storage is deleted. Otherwise, add a key to the profile manually.
+
 </details>
 
 ## Known limitations
 
-- **The key plugin is installed manually.** SillyTavern does not install server plugins from extensions. Without the plugin, AI Player keys are visible in Tavern's key manager.
+- **The key plugin is installed manually.** SillyTavern does not install server plugins from extensions. The plugin is optional: without it, AI Player keys are visible in Tavern's key manager, and everything else works the same.
 - **Errors in ST's main connection**, such as an HTTP 502 from the bot's model, are not interpreted by the extension, because SillyTavern provides no reliable generation-error event. Tavern reports those itself. AI Player reports errors from its own requests: turns, impressions, notes, tests, and model lists.
 - **Paid requests are never retried automatically.** When an impression or notes update fails, the turn that was already sent is not repeated. Retry the failed step yourself with **Retry** in the impressions window, by clicking the notification, or with **Update now** for notes.
 - **Token counts are approximate.** Context trimming and the notes budget use an estimate, and the meter uses ST's tokenizer. Both can differ from the provider's count.
@@ -227,7 +231,7 @@ It starts with the stage: turn, impressions, notes, test, model list, or keys. N
 
 **A profile used to work and now asks for a key. Why?**
 
-Since 0.5.1, AI Player no longer falls back to Tavern's main connection key. Add a key to the profile on the **Connection** tab.
+Since 0.5.1, AI Player no longer falls back to Tavern's main connection key. Add a key to the profile on the **Connection** tab, or click **Use Tavern's connection key** there if Tavern has the right key selected.
 
 **Are impressions the same as character thoughts?**
 

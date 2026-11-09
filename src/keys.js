@@ -148,14 +148,23 @@ export async function deleteProfileKey(p) {
     await ensureVault();
     if (vault.ok) {
         // с плагином общее хранилище таверны отсюда не меняем: только отвязываем профиль
-        if (!confirm(ui("Отвязать старый общий ключ от профиля? Из хранилища SillyTavern он не удаляется — для этого есть кнопка «Удалить старые общие копии»."))) return false;
-        p.legacySecretId = p.secretId;
+        const own = await isTavernOwnKey(p);
+        if (!confirm(own ? ui("Отвязать ключ таверны от профиля? Из SillyTavern он не удаляется.")
+            : ui("Отвязать старый общий ключ от профиля? Из хранилища SillyTavern он не удаляется — для этого есть кнопка «Удалить старые общие копии»."))) return false;
+        if (!own) p.legacySecretId = p.secretId;
         p.secretId = null;
         save();
         return true;
     }
     const key = srcOf(p).secret;
     const item = slotList(await secretState(), key).find(x => x.id === p.secretId);
+    // ключ самой таверны (не «AI Player …»), к которому профиль привязали явно, — только отвязываем
+    if (item && !isAipKey(item)) {
+        if (!confirm(ui`Отвязать ключ таверны «${keyName(item)}» от профиля? Из SillyTavern он не удаляется.`)) return false;
+        p.secretId = null;
+        save();
+        return true;
+    }
     const guard = sharedKeyGuard(item);
     if (guard) { toastr.warning(guard, 'AI Player', { timeOut: 9000 }); return false; }
     if (!confirm(ui`Удалить ключ «${keyName(item)}» из хранилища SillyTavern? Его потеряют все профили, где он выбран.`)) return false;
@@ -191,17 +200,58 @@ export async function migrateProfileKey(p) {
         save();
         return true;
     }
+    const tavernOwn = await isTavernOwnKey(p);   // ключ самой таверны — не «старая копия», в очистку не идёт
     const j = await vaultCall('/keys/import', { secretKey: srcOf(p).secret, secretId: p.secretId, provider: p.provider, url: p.url, label: '' });
     const old = p.secretId;
     // тот же ключ у профилей с тем же типом и адресом — переносим одним ключом
     for (const x of s.profiles) {
         if (x.secretId === old && x.provider === p.provider && vaultBase(x) === vaultBase(p)) {
             x.keyId = j.key.id;
-            x.legacySecretId = old;
+            if (!tavernOwn) x.legacySecretId = old;
             x.secretId = null;
         }
     }
     save();
+    return true;
+}
+
+// ---------- Ключ основного подключения таверны → профиль ----------
+// До 0.5.1 профиль без своего ключа молча брал активный ключ таверны. Запасного ключа больше нет,
+// но такой профиль можно явно привязать к этому ключу: с плагином он копируется в хранилище
+// AI Player на сервере, без плагина профиль привязывается к записи secrets.json по её id.
+// В обоих случаях основное подключение таверны не меняется.
+export async function tavernActiveKey(p) {
+    if (!p || srcOf(p).proxy || p.keyId || p.secretId) return null;
+    let list;
+    try { list = slotList(await secretState(), srcOf(p).secret); } catch { return null; }
+    const a = list.find(x => x.active);
+    // у старых ST (один ключ на провайдера) нет id — привязать нельзя; заглушку и ключи расширения не предлагаем
+    if (!a?.id || a.label === PLACEHOLDER_LABEL || isAipKey(a) || !String(a.value || '').trim()) return null;
+    return a;
+}
+// Профиль выбран на собственный ключ таверны (запись secrets.json без метки «AI Player …»)
+export async function isTavernOwnKey(p) {
+    if (!p?.secretId || srcOf(p).proxy) return false;
+    try { return slotList(await secretState(), srcOf(p).secret).some(x => x.id === p.secretId && !isAipKey(x)); }
+    catch { return false; }
+}
+// true — привязан; false — отменено; null — в таверне сейчас нет подходящего ключа
+export async function adoptTavernKey(p) {
+    await ensureVault();
+    const a = await tavernActiveKey(p);
+    if (!a) return p && !p.keyId && !p.secretId ? null : false;
+    const name = a.label || ui("без названия");
+    if (vault.ok) {
+        if (!confirm(ui`Скопировать ключ «${name}», активный в основном подключении таверны, в хранилище AI Player для этого профиля? Плагин скопирует его на сервере, в браузер ключ не попадёт. В таверне ключ останется как был.`)) return false;
+        if (p.keyId || p.secretId) return false;   // пока был открыт вопрос, ключ уже выбрали
+        const j = await vaultCall('/keys/import', { secretKey: srcOf(p).secret, secretId: a.id, provider: p.provider, url: p.url, label: a.label || p.name || '' });
+        p.keyId = j.key.id;
+    } else {
+        if (!confirm(ui`Привязать профиль к ключу «${name}», активному в основном подключении таверны? Профиль запомнит именно эту запись: если потом сменить ключ в панели API таверны, профиль останется на ней. AI Player не удаляет этот ключ из таверны — кнопка удаления только отвяжет его от профиля.`)) return false;
+        if (p.keyId || p.secretId) return false;
+        p.secretId = a.id;
+    }
+    settings().save();
     return true;
 }
 // Старые общие копии ключей AI Player (и заглушка) в secrets.json таверны
