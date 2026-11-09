@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">AI Player</title>
+  <desc id="desc">Your persona. Another mind. A roleplaying extension for SillyTavern.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#11101d"/><stop offset="1" stop-color="#292039"/></linearGradient>
+    <radialGradient id="glow"><stop stop-color="#9060da" stop-opacity=".28"/><stop offset="1" stop-color="#9060da" stop-opacity="0"/></radialGradient>
+    <linearGradient id="edge"><stop stop-color="#a98adf"/><stop offset="1" stop-color="#665174"/></linearGradient>
+    <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><path d="M36 0H0V36" fill="none" stroke="#c8b4ef" stroke-opacity=".035"/></pattern>
+  </defs>
+  <rect x="1" y="1" width="1198" height="298" rx="24" fill="url(#bg)" stroke="#4d405e"/>
+  <rect x="2" y="2" width="1196" height="296" rx="23" fill="url(#grid)"/>
+  <ellipse cx="895" cy="145" rx="360" ry="230" fill="url(#glow)"/>
+  <path d="M698 299V143a207 207 0 0 1 414 0v156M728 299V144a177 177 0 0 1 354 0v155" fill="none" stroke="#aa8ace" stroke-opacity=".13"/>
+  <rect x="66" y="55" width="159" height="26" rx="13" fill="#282137" stroke="#5c4876"/>
+  <circle cx="81" cy="68" r="3" fill="#c7a7ff"/>
+  <text x="94" y="72" fill="#d4c0ed" font-family="Arial,sans-serif" font-size="10" font-weight="700" letter-spacing="1.6">SILLYTAVERN EXTENSION</text>
+  <text x="62" y="154" fill="#f3edff" font-family="Arial,sans-serif" font-size="66" font-weight="800" letter-spacing="3">AI PLAYER</text>
+  <text x="67" y="194" fill="#ceb6f1" font-family="Arial,sans-serif" font-size="21" letter-spacing=".5">Your persona. Another mind.</text>
+  <path d="M68 225h50" stroke="#c5a4fb" stroke-width="3" stroke-linecap="round"/>
+  <text x="132" y="230" fill="#9d90b0" font-family="Arial,sans-serif" font-size="13">PLAY · REACT · REMEMBER</text>
+  <g transform="translate(733 67)">
+    <rect width="188" height="167" rx="15" fill="#201b2e" stroke="url(#edge)"/>
+    <rect x="18" y="19" width="32" height="32" rx="9" fill="#46315e"/>
+    <path d="M26 28h16v12H31l-5 4z" fill="none" stroke="#d6b4ff" stroke-width="1.8" stroke-linejoin="round"/>
+    <text x="62" y="39" fill="#d9c5f7" font-family="Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="1">PLAYER</text>
+    <rect x="18" y="72" width="137" height="6" rx="3" fill="#bba4de" opacity=".6"/>
+    <rect x="18" y="89" width="151" height="6" rx="3" fill="#867698" opacity=".5"/>
+    <rect x="18" y="106" width="113" height="6" rx="3" fill="#867698" opacity=".5"/>
+    <rect x="18" y="135" width="71" height="17" rx="8" fill="#3a2b50"/>
+    <text x="31" y="147" fill="#cdb6ed" font-family="Arial,sans-serif" font-size="9">YOUR PERSONA</text>
+  </g>
+  <path d="M930 145h27m-7-7 7 7-7 7" fill="none" stroke="#ae8ad8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(967 85)">
+    <rect width="174" height="150" rx="15" fill="#211d2a" stroke="#75627e"/>
+    <rect x="17" y="18" width="30" height="30" rx="9" fill="#463d40"/>
+    <path d="m32 24 7 9-7 9-7-9z" fill="none" stroke="#d3b787" stroke-width="1.8"/>
+    <text x="57" y="37" fill="#dfc9a7" font-family="Arial,sans-serif" font-size="11" font-weight="700" letter-spacing=".9">PARTNER</text>
+    <rect x="17" y="69" width="134" height="6" rx="3" fill="#c2ac91" opacity=".55"/>
+    <rect x="17" y="86" width="114" height="6" rx="3" fill="#8f8194" opacity=".5"/>
+    <rect x="17" y="103" width="126" height="6" rx="3" fill="#8f8194" opacity=".5"/>
+    <circle cx="145" cy="130" r="3" fill="#d2b68e"/>
+  </g>
+</svg>

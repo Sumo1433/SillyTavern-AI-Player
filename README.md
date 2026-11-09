@@ -1,15 +1,15 @@
 <div align="center">
 
-# 🎭 AI Player
+![AI Player — Your persona. Another mind.](docs/banner.svg)
 
 ### Let an AI play your persona in SillyTavern
 
 One model plays your character. Another plays their scene partner.<br>
 Choose the models, shape the style, and watch the story unfold.
 
-![Version 0.5.3](https://img.shields.io/badge/version-0.5.3-e99a25?style=flat-square)
-![SillyTavern extension](https://img.shields.io/badge/SillyTavern-extension-555?style=flat-square)
-[![MIT license](https://img.shields.io/badge/license-MIT-75b798?style=flat-square)](LICENSE)
+![Version 0.5.3](https://img.shields.io/badge/version-0.5.3-bb9af0?style=flat-square)
+![SillyTavern extension](https://img.shields.io/badge/SillyTavern-extension-655579?style=flat-square)
+[![MIT license](https://img.shields.io/badge/license-MIT-c8ad7f?style=flat-square)](LICENSE)
 
 **English** · [Русский](README.ru.md)
 
@@ -25,7 +25,45 @@ Use it to experiment with models, compare roleplaying styles, or see how a scene
 
 > **You start each new player turn by pressing ▶.** The bot's reply, impressions, and scheduled memory updates may follow automatically. There is no unattended continuous-play loop.
 
-## Language support
+<details>
+<summary><b>✨ New in 0.5.3</b></summary>
+
+The extension identifies the language of play from chat messages and names it explicitly to the model. Impressions follow the bot's reply to help prevent a switch to Russian during an English game.
+
+[Commit history](https://github.com/Sumo1433/SillyTavern-AI-Player/commits/main/)
+
+</details>
+
+## One scene. Two models.
+
+| 🎭 A role of your own | 💬 A player's perspective | 📜 Memory that carries forward |
+| :--- | :--- | :--- |
+| The agent plays your persona: acting, disagreeing, and making choices. | After the bot replies, it shares impressions in a separate window. | Notes help retain goals, promises, and important events. |
+
+![Live roleplay: Kimi's player turn and its impressions of Gemini's reply](docs/screenshots/gameplay-v053.png)
+
+<sub>A real session: Kimi K3 plays the user's persona; Gemini 3.8 Flash plays Seraphina. The custom Tavern theme shown here is separate from the extension.</sub>
+
+<details>
+<summary><b>⚙️ Game settings — length, context, and role</b></summary>
+
+<p align="center"><img src="docs/screenshots/game-settings-v053.png" alt="Game tab: word limits, output tokens, history size, and player role" width="640" /></p>
+
+Set turn length, history size, character knowledge, and additional instructions. Leave the role field empty to use your selected SillyTavern persona.
+
+</details>
+
+<details>
+<summary><b>🪄 Quick access from the extensions menu</b></summary>
+
+![AI Player menu entries: settings, impressions, and diagnostics](docs/screenshots/extension-menu.png)
+
+Open the wand menu beside the input field to reach settings, player impressions, and diagnostics.
+
+</details>
+
+<details>
+<summary><b>🌐 Interface, language of play, and built-in prompts</b></summary>
 
 - **Interface:** follows the language selected in SillyTavern. Russian and English are supported; other interface languages use English. Changing ST's language takes effect after its normal page reload.
 - **Built-in prompts:** written in English, including the combined style, Actor, Director, Anti-cliché, impressions, and memory instructions.
@@ -35,19 +73,6 @@ Use it to experiment with models, compare roleplaying styles, or see how a scene
 An explicit request to change the language of play takes priority. Language choice is handled by the model, not by automatic translation of your chat. Model compliance can vary. Your persona, card, custom instructions, and existing messages are preserved as entered.
 
 On upgrade, exact copies of the old built-in Russian prompts are migrated to the English versions. Edited custom prompts are preserved; review them if they explicitly require a particular output language.
-
-## Preview
-
-![AI Player turn and a separate impressions window in SillyTavern](docs/screenshots/gameplay.jpg)
-
-<sub>Screenshots from a live SillyTavern session: Kimi plays User, Gemini plays Seraphina. The interface and game are in English. The custom Wizard Tower Silver theme shown here is separate from the extension.</sub>
-
-<details>
-<summary><b>Game settings and English prompts</b></summary>
-
-![AI Player game settings](docs/screenshots/game-settings.jpg)
-
-![English prompt editor](docs/screenshots/prompt-editor.jpg)
 
 </details>
 
@@ -296,3 +321,4 @@ Found a problem? [Open an issue](https://github.com/Sumo1433/SillyTavern-AI-Play
 **Author:** Deadsum · [Telegram @Deadsum](https://t.me/Deadsum)
 
 **License:** [MIT](LICENSE)
+
