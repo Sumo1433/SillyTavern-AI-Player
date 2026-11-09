@@ -132,6 +132,7 @@ try {
         defaultViewport: { width: 1366, height: 900 },
     });
     const page = await browser.newPage();
+    await page.evaluateOnNewDocument(() => { if (!localStorage.getItem('language')) localStorage.setItem('language', 'ru-ru'); });
     const UA0 = await browser.userAgent();
     const consoleLog = [], pageErrors = [], dialogs = [], stReqs = [];
     page.on('console', m => consoleLog.push({ type: m.type(), text: m.text() }));
@@ -684,13 +685,19 @@ try {
 
     // ---------- Шаг 14: кнопка «Новая мысль» не ловит клики в закрытом окне ----------
     await step('14. «Новая мысль»: после закрытия окна elementFromPoint в точке кнопки — не элемент расширения', async () => {
-        // нужна прокрутка: добиваем карточек перегенерациями
+        // Независимые ходы сохраняют отдельные впечатления: перегенерация может удалить старые карточки.
+        async function addTurnForScroll() {
+            const before = await thoughtsState();
+            await page.click('#aip_play');
+            await waitFor(async () => { const after = await thoughtsState(); return after.log > before.log && await isIdle(); }, 60000, 300, 'новый ход для прокрутки');
+            await sleep(600);
+        }
         let st = await thoughtsState(), regens = 0;
-        while (st.scrollable < 80 && regens < 4) { await regenerateAndWait('доп. перегенерация'); regens++; st = await thoughtsState(); }
+        while (st.scrollable < 80 && regens < 4) { await addTurnForScroll(); regens++; st = await thoughtsState(); }
         check(st.scrollable >= 80, `окно мыслей не прокручивается (${st.scrollable}px)`);
         await ctxEval(() => { const b = document.querySelector('#aip_thoughts .aip-th-body'); b.scrollTop = 0; b.dispatchEvent(new Event('scroll')); });
         await sleep(300);
-        await regenerateAndWait('мысль при прокрутке вверх'); regens++;
+        await addTurnForScroll(); regens++;
         await sleep(400);   // transition 160ms
         const btn = await ctxEval(() => {
             const describe = e => e ? `${e.tagName}#${e.id}.${String(e.className).slice(0, 50)}` : null;
@@ -802,8 +809,8 @@ try {
             if (q.body?.messages?.[0]?.role !== 'user') problems.push(`${q.kind}: первое сообщение ${q.body?.messages?.[0]?.role}`);
             for (const s of [KEY, KEY2, TAVERN_KEY, PROXY_PASS]) if (q.raw.includes(s)) problems.push(`${q.kind}: секрет в теле`);
         }
-        if (turn && !systemText({ system: turn.body.system }).includes('Ты — живой игрок')) problems.push('ход: system не системный промпт агента');
-        if (thought && !systemText({ system: thought.body.system }).includes('выйди из роли')) problems.push('мысль: system не промпт «мыслей»');
+        if (turn && !systemText({ system: turn.body.system }).includes('You are a player')) problems.push('ход: system не системный промпт агента');
+        if (thought && !systemText({ system: thought.body.system }).includes('Step out of character')) problems.push('мысль: system не промпт «мыслей»');
         if (r.badge !== `🤖 ${CLAUDE_MODEL}`) problems.push(`бейдж: ${r.badge}`);
         if (r.aip?.provider && r.aip.provider !== 'claude_proxy') problems.push(`extra.aip.provider=${r.aip.provider}`);
         if (r.last !== CLAUDE_MODEL) problems.push(`aip_log.playerModel=${r.last}`);
@@ -900,6 +907,26 @@ try {
         check(st1.chatId === null && st1.characterId === null, `открылся чат: ${JSON.stringify(st1)}`);
         check(!st1.input, 'ход оставлен в поле ввода');
         return { toast: warn.text, mockRequests: 0, newChats: 0, state: st1 };
+    });
+
+    await step('17. UI follows ST locale after reload: en and ru; prompts remain English', async () => {
+        for (const locale of ['en', 'ru-ru']) {
+            await ctxEval(locale => localStorage.setItem('language', locale), locale);
+            await loadST();
+            await openSettingsViaMenu();
+            const state = await ctxEval(() => ({
+                connection: document.querySelector('.aip-tab[data-tab="conn"] span').textContent,
+                play: document.getElementById('aip_play').title,
+                locale: SillyTavern.getContext().getCurrentLocale(),
+            }));
+            check(state.locale === locale, 'ST locale differs: ' + JSON.stringify(state));
+            check(state.connection === (locale === 'en' ? 'Connection' : 'Подключение'), 'wrong interface language');
+            await page.click('.aip-tab[data-tab="prompts"]');
+            const prompt = await page.$eval('#aip_promptText', el => el.value);
+            check(prompt.startsWith('You are a player'), 'built-in prompt is not English');
+            await shot('localization-' + locale + '.png');
+            await ctxEval(() => document.getElementById('aip_close').click());
+        }
     });
 
     evidence.console = {

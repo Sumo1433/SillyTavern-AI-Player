@@ -94,9 +94,9 @@ export const isGenerate = c => c.url.endsWith('/api/backends/chat-completions/ge
 // тип запроса — по содержимому, а не по лимиту токенов (лимиты зависят от провайдера)
 const sysOf = c => String(c.body?.messages?.[0]?.content || '');
 const lastOf = c => String(c.body?.messages?.at?.(-1)?.content || '');
-export const isTestCall = c => isGenerate(c) && sysOf(c).startsWith('Отвечай одним словом');
-export const isReactionCall = c => isGenerate(c) && !isTestCall(c) && /об игре после ответа «/.test(lastOf(c));
-export const isMemoryCall = c => isGenerate(c) && /\[Обнови записи «/.test(lastOf(c));
+export const isTestCall = c => isGenerate(c) && /^(Отвечай одним словом|Reply with one word)/.test(sysOf(c));
+export const isReactionCall = c => isGenerate(c) && !isTestCall(c) && /об игре после ответа «|What is on your mind about the game after/.test(lastOf(c));
+export const isMemoryCall = c => isGenerate(c) && /\[Обнови записи «|\[Update the notes for/.test(lastOf(c));
 export const MEMORY_TEXT = 'СОСТОЯНИЕ: в таверне\nОБЕЩАНИЯ И ДОГОВОРЫ: должен Алисе три медяка';
 export const isTurnCall = c => isGenerate(c) && !isReactionCall(c) && !isTestCall(c) && !isMemoryCall(c);
 export const isSecretCall = (c, op) => c.url.endsWith(`/api/secrets/${op}`);
@@ -123,6 +123,7 @@ export function setup(opts = {}) {
       </body></html>`, { runScripts: 'dangerously', url: 'http://localhost:8000/', virtualConsole: vc, pretendToBeVisual: true });
     const w = dom.window;
     const doc = w.document;
+    w.localStorage.setItem('language', opts.locale ?? 'ru');
 
     // ---- полифилы ----
     w.requestAnimationFrame = cb => w.setTimeout(() => cb(Date.now()), 0);
@@ -180,6 +181,7 @@ export function setup(opts = {}) {
             .replaceAll('{{scenario}}', card.scenario).replaceAll('{{persona}}', card.persona),
         getCharacterCardFields: () => ({ ...card }),
         getCurrentChatId: () => state.chatId,
+        ...(opts.contextLocale ? { getCurrentLocale: () => opts.contextLocale } : {}),
         getTokenCountAsync: async t => Math.ceil(String(t).length / 4),
         eventSource, event_types,
     };

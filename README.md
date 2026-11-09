@@ -2,177 +2,192 @@
 
 # 🎭 AI Player
 
-### ИИ играет за вашу персону в SillyTavern
+### Let an AI play your persona in SillyTavern
 
-Одна модель — ваш персонаж. Другая — его партнёр по сцене.<br>
-Вы выбираете модели, настраиваете стиль и наблюдаете за игрой.
+One model plays your character. Another plays their scene partner.<br>
+Choose the models, shape the style, and watch the story unfold.
 
-![Версия 0.4.0](https://img.shields.io/badge/version-0.4.0-e99a25?style=flat-square)
-![Расширение SillyTavern](https://img.shields.io/badge/SillyTavern-extension-555?style=flat-square)
-[![Лицензия MIT](https://img.shields.io/badge/license-MIT-75b798?style=flat-square)](LICENSE)
+![Version 0.5.0](https://img.shields.io/badge/version-0.5.0-e99a25?style=flat-square)
+![SillyTavern extension](https://img.shields.io/badge/SillyTavern-extension-555?style=flat-square)
+[![MIT license](https://img.shields.io/badge/license-MIT-75b798?style=flat-square)](LICENSE)
 
-[Установка](#установка) · [Первый ход](#первый-ход) · [Возможности](#возможности) · [Вопросы](#вопросы)
+**English** · [Русский](README.ru.md)
+
+[Install](#installation) · [First turn](#your-first-turn) · [Features](#features) · [FAQ](#faq)
 
 </div>
 
 ---
 
-**AI Player** — расширение для SillyTavern, которое подключает отдельную модель для игры за `{{user}}`. Агент читает персону и текущий чат, пишет ход, а после ответа бота может поделиться впечатлениями и обновить память персонажа.
+**AI Player** is a SillyTavern extension that connects a separate model to play `{{user}}`. The agent reads your persona and current chat, writes a turn, and can share impressions and update character notes after the bot replies.
 
-Подходит для экспериментов с моделями, сравнения стилей ролевой игры и наблюдения за тем, как развивается сцена между двумя ИИ.
+Use it to experiment with models, compare roleplaying styles, or see how a scene develops between two AIs.
 
-> **Каждый новый ход запускаете вы кнопкой ▶.** Ответ бота, впечатления и плановое обновление памяти могут последовать автоматически. Непрерывной игры без нажатий нет.
+> **You start each new player turn by pressing ▶.** The bot's reply, impressions, and scheduled memory updates may follow automatically. There is no unattended continuous-play loop.
 
-## Как это выглядит
+## Language support
 
-![Ход AI Player и отдельное окно впечатлений в SillyTavern](tests/e2e/screens/thoughts-desktop.png)
+- **Interface:** follows the language selected in SillyTavern. Russian and English are supported; other interface languages use English. Changing ST's language takes effect after its normal page reload.
+- **Built-in prompts:** written in English, including the combined style, Actor, Director, Anti-cliché, impressions, and memory instructions.
+- **Language of play:** the model is instructed to follow the user's recent in-character messages, or the current scene if the user has not spoken yet. It can continue in Russian, English, Ukrainian, or another language regardless of the interface language.
+- **Impressions and notes:** use the language of play too. When no game language can be inferred, the ST interface locale is the fallback.
 
-<sub>Скриншоты из сквозных тестов: используются тестовые модели и вымышленные ответы. Подписи и расположение элементов могут отличаться от версии 0.4.0.</sub>
+An explicit request to change the language of play takes priority. Language choice is handled by the model, not by automatic translation of your chat. Model compliance can vary. Your persona, card, custom instructions, and existing messages are preserved as entered.
+
+On upgrade, exact copies of the old built-in Russian prompts are migrated to the English versions. Edited custom prompts are preserved; review them if they explicitly require a particular output language.
+
+## Preview
+
+![AI Player turn and a separate impressions window in SillyTavern](docs/screenshots/gameplay.jpg)
+
+<sub>Screenshots from a live SillyTavern session: Kimi plays User, Gemini plays Seraphina. The interface and game are in English. The custom Wizard Tower Silver theme shown here is separate from the extension.</sub>
 
 <details>
-<summary><b>Посмотреть настройки подключения</b></summary>
+<summary><b>Game settings and English prompts</b></summary>
 
-![Профиль подключения, выбор ключа и модели AI Player](tests/e2e/screens/settings-desktop-configured.png)
+![AI Player game settings](docs/screenshots/game-settings.jpg)
+
+![English prompt editor](docs/screenshots/prompt-editor.jpg)
 
 </details>
 
-## Установка
+## Installation
 
-В SillyTavern откройте **Extensions → Install extension** и вставьте адрес:
+In SillyTavern, open **Extensions → Install extension** and paste:
 
 ```text
 https://github.com/Sumo1433/SillyTavern-AI-Player
 ```
 
-После установки обновите страницу. Настройки доступны в меню расширений **(палочка) → AI Player — настройки**.
+Reload the page after installation. Open the wand menu → **AI Player — settings**.
 
 <details>
-<summary>Ручная установка</summary>
+<summary>Manual installation</summary>
 
-Скопируйте папку расширения в `SillyTavern/data/default-user/extensions/` и перезапустите SillyTavern. Для другого пользователя используйте папку его данных.
+Copy the extension folder into `SillyTavern/data/default-user/extensions/` and restart SillyTavern. For another ST user, use that user's data folder.
 
 </details>
 
-**Совместимость:** нужна версия SillyTavern с `SillyTavern.getContext()`. В проекте указана проверка на **1.19.0**; совместимость с другими версиями может отличаться.
+**Compatibility:** requires a SillyTavern version with `SillyTavern.getContext()`. The project targets **1.19.0**; compatibility with other versions may vary.
 
-## Первый ход
+## Your first turn
 
-1. Откройте чат с персонажем или группой и выберите свою персону.
-2. В настройках AI Player выберите тип подключения, укажите адрес API, если он требуется, и добавьте ключ или пароль прокси.
-3. Выберите модель или впишите её ID. Нажмите **«Тест»**.
-4. Нажмите **▶** возле поля ввода — агент подготовит ход за вашу персону.
-5. При включённой автоотправке ход уйдёт в чат. Если основной API SillyTavern подключён, бот ответит как обычно.
+1. Open a character or group chat and select your persona.
+2. In AI Player settings, choose the connection type, enter the API URL if needed, and save a key or proxy password.
+3. Choose a model or enter its ID. Click **Test**.
+4. Press **▶** near the input field to generate a turn for your persona.
+5. With auto-send enabled, the turn is sent to chat. If Tavern's main API is connected, the bot replies as usual.
 
-Повторное нажатие ▶ во время подготовки хода отменяет запрос. Если автоотправка выключена, текст остаётся в поле ввода для проверки и отправки вручную.
+Press ▶ again during turn generation to cancel. With auto-send disabled, review and send the generated text from the input field yourself.
 
-> Ход, впечатление и обновление памяти — **отдельные запросы к API**, каждый расходует токены. Впечатления и память можно отключить.
+> A turn, an impression, and a memory update are **separate API requests**, each consuming tokens. Impressions and memory can be disabled.
 
-## Возможности
+## Features
 
-| Возможность | Что даёт |
+| Feature | What it does |
 | --- | --- |
-| 🎭 Игра за персону | Контекст текущего чата, описание персоны и настраиваемый объём хода — по умолчанию 50–200 слов. |
-| 🔌 Профили подключения | Переключение между моделями, адресами API и ключами. |
-| 💭 Впечатления игрока | Отдельное окно с реакцией на ответ бота и субъективной оценкой партнёра. В чат эти впечатления не отправляются. |
-| 📝 Память персонажа | Записи о целях, отношениях и событиях подмешиваются в следующие ходы, даже если старая история обрезана. |
-| ✍️ Редактор промптов | Свои инструкции, пресеты, макросы ST и внедрение промпта на заданную глубину истории. |
-| 📊 Шкала контекста | Распределение места между промптом, историей и резервом на ответ; предупреждение о переполнении. |
-| 🤖 Подпись модели | Модель игрока отмечается возле его сообщений. |
-| 📦 Экспорт партии | Markdown и JSON с ходами, моделями, числом слов, временем ответа и впечатлениями. |
-| 👥 Групповые чаты | Игра с несколькими персонажами. |
-| 📱 Интерфейс для телефона | Адаптивная вёрстка и отключаемые анимации. |
+| 🎭 Persona roleplay | Uses the current chat and persona description. Turn length is configurable; the default target is 50–200 words. |
+| 🔌 Connection profiles | Switch models, API addresses, and keys. |
+| 💭 Player impressions | A separate window for reactions to the bot's reply and a subjective partner rating. These comments are not sent to chat. |
+| 📝 Character memory | Includes notes about goals, relationships, and events in later turns, even after old history is trimmed. |
+| ✍️ Prompt editor | Custom instructions, style presets, ST macros, and prompt insertion at a chosen history depth. |
+| 📊 Context meter | Shows the prompt, history, and response reserve, with overflow warnings. |
+| 🤖 Model badges | Identifies the player model beside its messages. |
+| 📦 Session export | Markdown and JSON with turns, models, word counts, response times, and impressions. |
+| 👥 Group chats | Supports scenes with multiple characters. |
+| 📱 Mobile layout | Responsive interface and optional animations. |
 
-### Подключения
+### Connections
 
-| Тип в настройках | Когда выбирать | Что указать |
+| Connection type | Use it for | Required settings |
 | --- | --- | --- |
-| **OpenAI-совместимый** | API или реверс-прокси с форматом OpenAI | Базовый URL, например `https://api.openai.com/v1`, ключ и ID модели. |
-| **Anthropic** | Официальный API Claude | Ключ Anthropic и ID модели. |
-| **Claude через реверс-прокси** | Прокси с форматом Anthropic | Адрес прокси, пароль и ID модели. |
+| **OpenAI-compatible** | An API or reverse proxy using OpenAI format | Base URL, such as `https://api.openai.com/v1`, key, and model ID. |
+| **Anthropic** | The official Claude API | Anthropic key and model ID. |
+| **Claude reverse proxy** | A proxy using Anthropic format | Proxy address, password, and model ID. |
 
-Для OpenAI-совместимых подключений список моделей запрашивается у сервера. Для Claude расширение предлагает встроенный список; нужный ID можно вписать вручную.
+For OpenAI-compatible connections, the model list is requested from the server. For Claude, the extension offers a built-in list; you can enter another ID manually.
 
-Для Claude-прокси адрес обычно заканчивается на `/v1`: SillyTavern добавляет `/messages`. ST требует непустой пароль прокси — если сервис работает без пароля, впишите любой символ.
+Claude proxy addresses usually end in `/v1`; ST adds `/messages`. ST requires a nonempty proxy password. If the service requires none, enter any character.
 
-### Настройка игры
+### Customize your game
 
 <details>
-<summary><b>Стиль, пресеты и свои промпты</b></summary>
+<summary><b>Styles, presets, and custom prompts</b></summary>
 
-Стандартный промпт сочетает три подхода. Каждый также доступен отдельным пресетом:
+The combined default prompt brings together three approaches, each also available as a preset:
 
-- **«Актёр»** — желания персонажа, подтекст и собственный голос.
-- **«Режиссёр»** — цели, темп сцены и ставки.
-- **«Анти-клише»** — инструкции против повторов и шаблонной прозы.
+- **Actor:** character desire, subtext, and a distinctive voice.
+- **Director:** goals, scene movement, and stakes.
+- **Anti-cliché:** concrete details, clean prose, and varied phrasing.
 
-Можно редактировать системный промпт, напоминание перед ходом, запрос впечатлений и промпт памяти. Поддерживаются плейсхолдеры расширения и макросы SillyTavern.
+Edit the system prompt, turn reminder, impressions prompt, and memory prompt. Extension placeholders and SillyTavern macros are supported. `{language_rule}` inserts the output-language instruction, which is also appended automatically to rendered prompts.
 
-Дополнительный промпт внедряется в историю с ролью `system` или `user`. Глубина **0** ставит его в конец, перед напоминанием о ходе; глубина **N** — перед последними N сообщениями.
+A custom history prompt can use the `system` or `user` role. Depth **0** inserts it at the end, before the turn reminder; depth **N** inserts it before the last N history messages.
 
-Режим ограничения знаний просит модель опираться на то, что персонаж видит в сцене. Соблюдение этой инструкции зависит от модели.
+The limited-knowledge setting asks the model to use only what its character can know from the scene and background. Compliance depends on the model.
 
 </details>
 
 <details>
-<summary><b>Память игрока</b></summary>
+<summary><b>Player memory</b></summary>
 
-Память включена по умолчанию. Раз в **3 хода агента** отдельный запрос обновляет записи о состоянии персонажа, целях, отношениях, обещаниях и незакрытых делах. Интервал настраивается на вкладке **«Партия»**.
+Memory is enabled by default. Every **3 agent turns**, a separate request updates notes about the character's state, goals, relationships, promises, and unresolved matters. Change the interval on the **Session** tab.
 
-У каждого чата свои записи. Их можно исправить вручную, обновить кнопкой или отключить. Промпт просит отделять догадки от фактов, но сводку всё равно составляет модель — проверяйте важные детали.
+Each chat has its own notes. Edit them, update them manually, or disable memory. The prompt asks the model to distinguish suspicions from facts, but important details still need checking.
 
-При удалении опорного сообщения записи могут помечаться как устаревшие. После редактирования истории стоит самостоятельно проверить их: автоматическая проверка не отслеживает все изменения содержания.
-
-</details>
-
-<details>
-<summary><b>Контекст и длинные чаты</b></summary>
-
-Расширение использует историю только открытого чата. При нехватке места сначала отбрасываются старые сообщения, затем, если необходимо, приветствие. Если даже последнее сообщение не помещается, появляется предупреждение.
-
-Обрезка истории использует приблизительную оценку токенов. Шкала дополнительно использует токенайзер ST, но его результат тоже может отличаться от подсчёта выбранной модели. Лимит контекста модели указывается в профиле.
+Deleting a reference message may mark notes as stale. Review notes after editing history: automatic checks do not detect every content change.
 
 </details>
 
 <details>
-<summary><b>Ключи и пароль прокси</b></summary>
+<summary><b>Context and long chats</b></summary>
 
-API-ключи сохраняются через хранилище SillyTavern — в `secrets.json` на сервере, где запущена таверна. В настройки расширения ключ не записывается. При стандартных настройках ST интерфейс получает маску ключа; поведение зависит от параметра `allowKeysExposure` в `config.yaml`.
+Only the open chat's history is used. When space runs out, older messages are dropped first, followed by the greeting if needed. A warning appears if even the latest message does not fit.
 
-Ключи расширения помечаются как **AI Player**. После добавления ключа расширение пытается восстановить прежний активный ключ таверны. Если своего ключа у ST не было, создаётся пустая заглушка. Не удаляйте её, пока не добавите основной ключ таверны. После изменения ключей проверьте основное подключение ST, особенно если сервер сообщил об ошибке.
-
-**Пароль Claude-прокси хранится иначе:** в настройках расширения, внутри `settings.json`, и загружается в браузер вместе с ними. Не публикуйте этот файл и резервные копии данных с паролями.
-
-Запросы к моделям идут через сервер SillyTavern.
+History trimming uses an approximate token estimate. The meter also uses ST's tokenizer, which may differ from the chosen model's tokenizer. Set the model context limit in its profile.
 
 </details>
 
-## Вопросы
+<details>
+<summary><b>Keys and proxy passwords</b></summary>
 
-**Чем впечатления отличаются от мыслей персонажа?**
+API keys are saved through SillyTavern's key storage, in `secrets.json` on the server running Tavern. They are not saved in extension settings. Under standard ST settings, the browser receives masked values; this depends on `allowKeysExposure` in `config.yaml`.
 
-Текст `(мысль: …)` внутри хода — часть сообщения в чате, бот его видит. Окно 💭 содержит впечатления игрока об игре; они сохраняются отдельно и в чат не отправляются.
+Extension keys are labeled **AI Player**. This is shared ST storage, so those keys also appear in Tavern's main key manager; the extension profile selects its key separately. After adding a key, the extension attempts to restore Tavern's previous active key. If there was no main key, it creates an empty placeholder. Keep it until you add a main Tavern key. Check Tavern's main connection after key changes, especially after a server error.
 
-**Можно ли использовать разные модели для двух сторон?**
+**Claude proxy passwords are different:** they are saved in extension settings inside `settings.json` and loaded into the browser with those settings. Do not publish that file or backups containing passwords.
 
-Да. Модель игрока выбирается в AI Player, а модель бота — в основном подключении SillyTavern.
+Model requests go through the SillyTavern server.
 
-**Почему ход остался в поле ввода?**
+</details>
 
-Проверьте автоотправку, подключение основного API и состояние генерации ST. Если таверна занята или кнопка отправки недоступна, расширение оставляет текст для ручной отправки.
+## FAQ
 
-**Появится ли новое впечатление после перегенерации?**
+**Are impressions the same as character thoughts?**
 
-При включённых впечатлениях — да, после нового ответа на ход агента. После «Продолжить» и служебных сообщений новый запрос впечатлений не запускается.
+No. `(thought: …)` inside a turn is part of the chat message and is visible to the bot. The 💭 window contains the player's impressions of the game, stored separately. Thought labels follow the language of play.
 
-**Гарантированы ли заданный объём хода, отсутствие клише и точность памяти?**
+**Can the two sides use different models?**
 
-Нет. Эти требования задаются промптами; результат зависит от модели, её настроек и контекста.
+Yes. Choose the player model in AI Player and the bot model in SillyTavern's main connection.
 
-## Разработка и тесты
+**Why was the turn left in the input field?**
 
-Расширение загружается без сборки: `index.js` содержит логику и интерфейс, `style.css` — стили, `manifest.json` — метаданные. В `prompts/` лежат тексты промптов и их варианты.
+Check auto-send, the main API connection, and ST's generation status. If Tavern is busy or sending is unavailable, the extension leaves the turn for manual submission.
 
-**Модульные тесты** — 57 проверок в jsdom с имитацией API SillyTavern:
+**Are new impressions generated after regeneration?**
+
+Yes, when impressions are enabled and the new reply follows an agent turn. Continue and service messages do not trigger a new impressions request.
+
+**Are the word limit, language choice, prose style, and memory accuracy guaranteed?**
+
+No. They are prompt instructions; results depend on the model, settings, and context.
+
+## Development and tests
+
+No build step is required: `index.js` contains the logic and interface, `style.css` the styles, and `manifest.json` the extension metadata. `prompts/` contains English prompt references and style variants.
+
+**Unit tests:** 73 checks using jsdom and a simulated SillyTavern API, including localization, English request scaffolding, and migration of built-in prompts:
 
 ```sh
 cd tests/unit
@@ -180,7 +195,7 @@ npm install
 npm test
 ```
 
-**Сквозной тест** — настоящая SillyTavern, тестовый API и браузер Edge/Chrome:
+**End-to-end test:** real SillyTavern, a mock API, and Edge/Chrome:
 
 ```sh
 cd tests/e2e
@@ -188,12 +203,12 @@ npm install
 node run-e2e.mjs
 ```
 
-Сценарий использует отдельную папку данных и порты **8123/8124**. По умолчанию ищет ST в `C:\Projects\SillyTavern`; другой путь задаётся переменной `ST_DIR`, путь к браузеру — `BROWSER`. Подробности — в [сценарии теста](tests/e2e/run-e2e.mjs).
+The scenario uses a separate data folder and ports **8123/8124**. It looks for ST at `C:\Projects\SillyTavern` by default. Set `ST_DIR` for another path and `BROWSER` for the browser executable. See the [test scenario](tests/e2e/run-e2e.mjs).
 
-Нашли проблему? [Создайте issue](https://github.com/Sumo1433/SillyTavern-AI-Player/issues) и укажите версию ST, тип подключения, шаги воспроизведения и текст ошибки. Удалите из приложений ключи и пароли.
+Found a problem? [Open an issue](https://github.com/Sumo1433/SillyTavern-AI-Player/issues) with your ST version, connection type, steps to reproduce, and error message. Remove keys and passwords from attachments.
 
 ---
 
-**Автор:** Deadsum · [Telegram @Deadsum](https://t.me/Deadsum)
+**Author:** Deadsum · [Telegram @Deadsum](https://t.me/Deadsum)
 
-**Лицензия:** [MIT](LICENSE)
+**License:** [MIT](LICENSE)

@@ -30,13 +30,14 @@ export function systemText(body) {
 const isPlayerModel = m => m === 'mock-player' || /^claude-/.test(String(m || ''));
 export function classify(body) {
     const sys = systemText(body);
-    if (sys.includes('выйди из роли') || sys.includes('вне роли')) return 'thought';
-    if (isPlayerModel(body?.model) && sys.includes('Отвечай одним словом')) return 'test';
+    if (sys.includes('выйди из роли') || sys.includes('вне роли') || sys.includes('Step out of character')) return 'thought';
+    if (isPlayerModel(body?.model) && /Отвечай одним словом|Reply with one word/.test(sys)) return 'test';
+    if (isPlayerModel(body?.model) && sys.includes('Maintain the personal roleplaying notes')) return 'memory';
     if (isPlayerModel(body?.model)) return 'turn';
     return 'bot';
 }
 
-const TEXT = { turn: TURN, thought: THOUGHT, test: 'готов', bot: BOT };
+const TEXT = { memory: 'СОСТОЯНИЕ: раненый путник в лесу.\nЦЕЛИ: узнать, кому можно доверять.', turn: TURN, thought: THOUGHT, test: 'готов', bot: BOT };
 
 export function startMock({ port = 8124, logFile } = {}) {
     if (logFile) fs.writeFileSync(logFile, '');

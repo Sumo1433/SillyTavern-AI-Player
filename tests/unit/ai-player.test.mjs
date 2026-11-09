@@ -100,7 +100,7 @@ test('3. Ход игрока: тело запроса к generate, вставк�
     assert.ok(b.stop.includes('\nАлиса:') && b.stop.includes('\n**Алиса**:'));
     const m = b.messages;
     assert.equal(m[0].role, 'system');
-    assert.match(m[0].content, /«Боб»/);
+    assert.match(m[0].content, /Боб/);
     assert.match(m[0].content, /Алиса — трактирщица/);
     assert.match(m[0].content, /Боб — циничный наёмник/);
     assert.doesNotMatch(m[0].content, /\{player\}|\{partner\}|\{min\}/);
@@ -108,8 +108,8 @@ test('3. Ход игрока: тело запроса к generate, вставк�
     assert.deepEqual(m[2], { role: 'assistant', content: '*входит* «Привет»' });
     assert.equal(m[3].role, 'user');
     assert.ok(m[3].content.startsWith('Алиса: «Чего желаешь?»'));
-    assert.match(m[3].content, /\[Ход «Боб»\./);
-    assert.match(m[3].content, /50–200 слов/);
+    assert.match(m[3].content, /\[Your turn as Боб\./);
+    assert.match(m[3].content, /50–200 words/);
     assert.equal(m.length, 4);
     // запрос с CSRF-заголовками ST
     // ход отправлен
@@ -130,12 +130,12 @@ test('3b. Первое сообщение (приветствие) сохран�
     assert.equal(m[0].role, 'system');
     assert.equal(m[1].role, 'user');
     assert.ok(m[1].content.startsWith('Алиса: Добро пожаловать в таверну!'), 'приветствие первым');
-    assert.match(m[1].content, /часть истории пропущена/);
+    assert.match(m[1].content, /part of the history omitted/);
     assert.equal(m[2].role, 'assistant');
     assert.ok(!m[2].content.startsWith('Боб:'), 'реплики игрока без префикса');
     assert.equal(m.at(-1).role, 'user');
     assert.ok(m.at(-1).content.startsWith('Алиса: Последняя реплика'));
-    assert.match(m.at(-1).content, /\[Ход «Боб»/);
+    assert.match(m.at(-1).content, /\[Your turn as Боб/);
     // роли чередуются
     for (let i = 2; i < m.length; i++) assert.notEqual(m[i].role, m[i - 1].role);
 });
@@ -148,7 +148,7 @@ test('3c. Если последним стоит ход игрока — нап�
     const msgs = aip.buildMessages(s, aip.getSync(), 'sys');
     assert.equal(msgs.at(-2).role, 'assistant');
     assert.equal(msgs.at(-1).role, 'user');
-    assert.match(msgs.at(-1).content, /^\[Ход «Боб»/);
+    assert.match(msgs.at(-1).content, /^\[Your turn as Боб/);
 });
 
 test('3f. Свой промпт: глубина 0 — в конце перед напоминанием; глубина N — перед последними N сообщениями; плейсхолдеры', () => {
@@ -163,7 +163,7 @@ test('3f. Свой промпт: глубина 0 — в конце перед �
     assert.ok(i > 0, 'свой промпт вставлен, плейсхолдер {player} подставлен');
     assert.equal(msgs[i].role, 'system');
     assert.equal(i, msgs.length - 2, 'глубина 0: сразу перед финальным напоминанием');
-    assert.match(msgs.at(-1).content, /^\[Ход «Боб»/);
+    assert.match(msgs.at(-1).content, /^\[Your turn as Боб/);
     // глубина = число сообщений истории → в самом начале истории
     const histLen = t.c.chat.filter(m => !m.is_system && (m.mes || '').trim()).length;
     s.customDepth = histLen;
@@ -329,10 +329,10 @@ test('7. MESSAGE_RECEIVED после хода агента → «мысль» в
     assert.equal(rc.length, 1);
     const b = rc[0].body;
     assert.equal(b.messages[0].role, 'system');
-    assert.match(b.messages[0].content, /выйди из роли/);
+    assert.match(b.messages[0].content, /Step out of character/);
     assert.doesNotMatch(b.messages[0].content, /Критерии:/);   // мысль участника, а не диагностика
-    assert.match(b.messages[0].content, /«Боб»/);
-    assert.match(b.messages[1].content, /\[ТЫ\] Боб: \*кивает\*/);
+    assert.match(b.messages[0].content, /Боб/);
+    assert.match(b.messages[1].content, /\[YOU\] Боб: \*кивает\*/);
     assert.match(b.messages[1].content, /Держи эль/);
     assert.equal(b.secret_id, 'k1');
     const e = t.c.chatMetadata.aip_log[0];
@@ -705,7 +705,7 @@ test('9b. Шкала контекста: маленький contextSize → «н
     const sync = t.aip.getSync();
     const msgs = t.aip.buildMessages(s, sync, t.aip.buildSystemPrompt(s, sync));
     assert.ok(msgs[0].content.startsWith('Алиса: Добро пожаловать в таверну!'));
-    assert.match(msgs[0].content, /пропущена/);
+    assert.match(msgs[0].content, /history omitted/);
     assert.ok(msgs.meta.trimmed > 0);
     assert.ok(msgs.meta.included < 20);
     // резерв ответа больше лимита модели → «переполнено»
@@ -736,7 +736,7 @@ test('10. Редактор промптов: плейсхолдеры подст
     assert.equal(t.s().prompts.turn, 'Ход {player} против {partner}: {min}-{max} слов, {them}. {{user}}/{{char}} {unknown}');
     assert.match(t.$('#aip_promptState').textContent, /Свой промпт/);
     t.click('#aip_promptPreview');
-    assert.equal(t.$('#aip_promptOut').textContent, 'Ход Боб против Алиса: 50-200 слов, «Алиса». Боб/Алиса {unknown}');
+    assert.equal(t.$('#aip_promptOut').textContent.split('\n\nOUTPUT LANGUAGE:')[0], 'Ход Боб против Алиса: 50-200 слов, «Алиса». Боб/Алиса {unknown}');
     assert.ok(!t.$('#aip_promptOut').classList.contains('aip-hidden'));
     // свой промпт уходит в запрос
     await agentTurn(t);
@@ -761,11 +761,11 @@ test('10b. renderPrompt: макросы ST {{scenario}} / {{persona}} / {{user}}
     const s = t.aip.settings().s;
     s.prompts.system = 'Сцена: {{scenario}}. Я: {{persona}}. Игрок {{user}}. Своё: {scenario}.';
     const out = t.aip.renderPrompt(s, t.aip.getSync(), 'system');
-    assert.equal(out, 'Сцена: Сценарий карты. Я: Боб — циничный наёмник. Игрок Боб. Своё: Сценарий карты.');
+    assert.equal(out.split('\n\nOUTPUT LANGUAGE:')[0], 'Сцена: Сценарий карты. Я: Боб — циничный наёмник. Игрок Боб. Своё: Сценарий карты.');
     // без макросов ST видно, что сами {{…}} расширение не трогает
     t.c.substituteParams = undefined;
     const raw = t.aip.renderPrompt(s, t.aip.getSync(), 'system');
-    assert.equal(raw, 'Сцена: {{scenario}}. Я: {{persona}}. Игрок {{user}}. Своё: Сценарий карты.');
+    assert.equal(raw.split('\n\nOUTPUT LANGUAGE:')[0], 'Сцена: {{scenario}}. Я: {{persona}}. Игрок {{user}}. Своё: Сценарий карты.');
 });
 
 // ---------------------------------------------------------------- 11
@@ -987,12 +987,12 @@ test('M1. Память: после N ходов агента — запрос з
     assert.equal(mem.upTo, turnIdx, 'учтено до хода агента, ответ бота не входит');
     assert.equal(mem.chatId, 'chat-1');
     const mc = t.calls.find(isMemoryCall);
-    assert.match(mc.body.messages[0].content, /СОСТОЯНИЕ:/);
+    assert.match(mc.body.messages[0].content, /STATE:/);
     assert.doesNotMatch(mc.body.messages[0].content, /трактирщица/, 'описание карты (знание ведущего) в записи не идёт');
     // ход агента получает записи в системном промпте
     await agentTurn(t);
     const turn = t.calls.filter(isTurnCall).at(-1);
-    assert.match(turn.body.messages[0].content, /ЗАПИСИ «Боб»[\s\S]*три медяка/);
+    assert.match(turn.body.messages[0].content, /CHARACTER NOTES FOR Боб[\s\S]*три медяка/);
     // выключили память — записи в ход не идут
     t.s().memory = false;
     await botReply(t); await agentTurn(t);

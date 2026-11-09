@@ -1,11 +1,11 @@
 {
-  "display_name": "AI Player (ИИ против ИИ)",
+  "display_name": "AI Player (AI vs AI)",
   "loading_order": 50,
   "requires": [],
   "optional": [],
   "js": "index.js",
   "css": "style.css",
   "author": "Deadsum (t.me/Deadsum)",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "homePage": "https://github.com/Sumo1433/SillyTavern-AI-Player"
 }
