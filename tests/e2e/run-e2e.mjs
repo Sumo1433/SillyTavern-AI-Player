@@ -2,16 +2,23 @@
 // Запуск: cd tests/e2e && npm install && node run-e2e.mjs
 // Переменные окружения: ST_DIR (по умолчанию C:\Projects\SillyTavern), BROWSER (путь к Edge/Chrome), HEADFUL=1,
 //   EXT_SRC (папка с index.js/style.css/manifest.json другой версии расширения).
-// Шаги 1–10c — базовый сценарий; 11–16 — проверки 0.3.0: утечка ключа (12a/12b), Regenerate (13),
-//   кнопка «Новая мысль» в закрытом окне (14), Claude через реверс-прокси (15a–15d), ▶ без чата (16).
-// Статус KNOWN — подтверждённый известный баг (прогон не валит, см. report.json).
+// Фаза A (без серверного плагина, «общий режим»): шаги 1–17 — базовый сценарий, утечка ключа (12a/12b),
+//   профиль без своего ключа (12c), перегенерации и привязка впечатлений (13–13c), прокрутка (14–14b),
+//   Claude через реверс-прокси (15a–15d), ▶ без чата (16), язык (17).
+// Фаза B (с плагином server-plugin → SillyTavern/plugins/ai-player, enableServerPlugins: true):
+//   P1-* — хранилище плагина, миграция, очистка общих копий, ошибки, перезапуск, два пользователя;
+//   P2/P3 — записи игрока (устаревший результат, переполнение); P4-* — впечатления (свайп, повтор).
+// Статусы: PASS, FAIL, KNOWN (подтверждённый известный дефект — не засчитывается как пройденный, прогон
+//   не валит), SKIP (не проверялось, причина в деталях). Итоги раздельно — в консоли и report.json.
 // Пользовательские data/ и config.yaml ST не трогаются: отдельный --dataRoot и --configPath в .tmp-data.
+// Папка плагина SillyTavern/plugins/ai-player: если её не было — создаётся на время прогона и удаляется;
+//   если была и отличается — сохраняется копия и в конце возвращается.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
-import { startMock, systemText } from './mock-server.mjs';
+import { startMock, systemText, addRule, clearRules, mockCtl, MEMORY_TEXT } from './mock-server.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const EXT_SRC = process.env.EXT_SRC || path.resolve(HERE, '..', '..');   // EXT_SRC — прогнать другую версию расширения
@@ -31,8 +38,19 @@ const KEY2 = 'sk-e2e-SECOND-aaaabbbbccccdddd';      // второй ключ р�
 const KEY2_LABEL = 'E2E ключ 2';
 const TAVERN_KEY = 'sk-e2e-TAVERN-9876543210fedcba'; // собственный ключ таверны (Custom), тоже фиктивный
 const PROXY_PASS = 'e2e-proxy-pass';
+const KEY_V = 'sk-e2e-VAULT-1111222233334444';        // ключ, добавленный при установленном плагине
+const KEY_V_LABEL = 'E2E ключ плагина';
+const KEY_TMP = 'sk-e2e-VAULTTMP-5555666677778888';   // ключ временного профиля (удаляется вместе с профилем)
+const KEY_ACT = 'sk-e2e-ACTIVECOPY-999900001111';     // общая копия AI Player, выбранная активной в самой таверне
+const KEY_U2 = 'sk-e2e-USER2-aaaa0000bbbb1111';       // ключ второго пользователя ST
+const ALL_SECRETS = [KEY, KEY2, TAVERN_KEY, PROXY_PASS, KEY_V, KEY_TMP, KEY_ACT, KEY_U2];
 const CLAUDE_MODEL = 'claude-sonnet-5';
 const PLACEHOLDER_RE = /^Пусто — заглушка AI Player/;
+const PLUGIN_SRC = path.join(EXT_SRC, 'server-plugin');
+const PLUGIN_DST = path.join(ST_DIR, 'plugins', 'ai-player');
+const KEYS_FILE = path.join(USER_DIR, 'ai-player', 'keys.json');
+const SECRETS_FILE = path.join(USER_DIR, 'secrets.json');
+const CONFIG_FILE = path.join(TMP, 'config.yaml');
 const BROWSERS = [
     process.env.BROWSER,
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
@@ -43,23 +61,26 @@ const BROWSERS = [
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const results = [];
 const evidence = {};
-let failed = 0;
+const counts = { PASS: 0, FAIL: 0, KNOWN: 0, SKIP: 0 };
+// значения ключей/паролей в выводе и отчёте заменяются метками
+const maskAll = s => { let t = String(s ?? ''); for (const [i, k] of ALL_SECRETS.entries()) t = t.replaceAll(k, `<SECRET${i}>`); return t; };
 
-// status: true = PASS, false = FAIL, 'known' = известный баг расширения/ST (подтверждён, но прогон не валит)
-function record(step, ok, details) {
-    results.push({ step, ok, details });
-    if (!ok) failed++;
-    const tag = ok === 'known' ? 'KNOWN' : ok ? 'PASS' : 'FAIL';
-    console.log(`${tag}  ${step}${details ? ' — ' + (typeof details === 'string' ? details : JSON.stringify(details)) : ''}`);
+// status: 'PASS' | 'FAIL' | 'KNOWN' (подтверждённый известный дефект, не засчитывается как пройденный) | 'SKIP'
+function record(step, status, details) {
+    const d = details == null ? details : JSON.parse(maskAll(JSON.stringify(details)));
+    results.push({ step, status, details: d });
+    counts[status]++;
+    console.log(`${status.padEnd(5)} ${step}${d ? ' — ' + (typeof d === 'string' ? d : JSON.stringify(d)) : ''}`);
 }
 async function step(name, fn) {
     try {
         const r = await fn();
-        if (r && r.ok === false) record(name, false, r.details);
-        else if (r && r.known) record(name, 'known', r.details);
-        else record(name, true, r?.details ?? r);
+        if (r && r.ok === false) record(name, 'FAIL', r.details);
+        else if (r && r.known) record(name, 'KNOWN', r.details);
+        else if (r && r.skip) record(name, 'SKIP', r.details);
+        else record(name, 'PASS', r?.details ?? r);
     } catch (e) {
-        record(name, false, e?.stack?.split('\n').slice(0, 3).join(' | ') || String(e));
+        record(name, 'FAIL', e?.stack?.split('\n').slice(0, 3).join(' | ') || String(e));
     }
 }
 const check = (cond, msg) => { if (!cond) throw new Error(msg); };
@@ -71,7 +92,7 @@ async function waitFor(fn, timeout = 30000, every = 250, what = 'условие'
     const t0 = Date.now();
     let last;
     while (Date.now() - t0 < timeout) {
-        try { last = await fn(); if (last) return last; } catch (e) { last = e; }
+        try { last = await fn(); if (last) return last; } catch (e) { if (e?.fatal) throw e; last = e; }
         await sleep(every);
     }
     throw new Error(`таймаут ожидания: ${what}${last instanceof Error ? ` (${last.message})` : ''}`);
@@ -85,22 +106,71 @@ fs.mkdirSync(SCREENS, { recursive: true });
 const mock = await startMock({ port: MOCK_PORT, logFile: MOCK_LOG });
 console.log(`мок: ${MOCK_URL}`);
 
+// тестовый config.yaml — копия стандартного; плагины выключены (фаза A), автообновление плагинов через git — нет
+fs.copyFileSync(path.join(ST_DIR, 'default', 'config.yaml'), CONFIG_FILE);
+function patchConfig(patch) {
+    let t = fs.readFileSync(CONFIG_FILE, 'utf8');
+    for (const [k, v] of Object.entries(patch)) {
+        const re = new RegExp(`^(${k}):.*$`, 'm');
+        t = re.test(t) ? t.replace(re, `$1: ${v}`) : `${t}\n${k}: ${v}\n`;
+    }
+    fs.writeFileSync(CONFIG_FILE, t);
+}
+patchConfig({ enableServerPlugins: false, enableServerPluginsAutoUpdate: false, enableUserAccounts: false });
+
+// папка плагина в ST: запоминаем, была ли она до прогона
+const pluginPreexisted = fs.existsSync(PLUGIN_DST);
+let pluginBackup = null, pluginInstalled = false;
+const dirSig = d => fs.existsSync(d) ? fs.readdirSync(d, { recursive: true }).map(String).sort()
+    .map(f => { const p = path.join(d, f); return fs.statSync(p).isFile() ? `${f}:${fs.readFileSync(p, 'utf8')}` : f; }).join('\n') : null;
+function installPlugin() {
+    if (pluginPreexisted && dirSig(PLUGIN_DST) !== dirSig(PLUGIN_SRC)) {
+        pluginBackup = path.join(OUT, 'plugin-backup');
+        fs.cpSync(PLUGIN_DST, pluginBackup, { recursive: true });
+        fs.rmSync(PLUGIN_DST, { recursive: true, force: true });
+    }
+    if (!fs.existsSync(PLUGIN_DST)) fs.cpSync(PLUGIN_SRC, PLUGIN_DST, { recursive: true });
+    pluginInstalled = true;
+}
+function uninstallPlugin() {
+    if (!pluginInstalled) return;
+    if (!pluginPreexisted) fs.rmSync(PLUGIN_DST, { recursive: true, force: true });
+    else if (pluginBackup) { fs.rmSync(PLUGIN_DST, { recursive: true, force: true }); fs.cpSync(pluginBackup, PLUGIN_DST, { recursive: true }); }
+}
+
 const stLog = fs.createWriteStream(path.join(OUT, 'st-server.log'));
-const st = spawn(process.execPath, [
-    'server.js',
-    '--configPath', path.join(TMP, 'config.yaml'),
-    '--dataRoot', TMP,
-    '--port', String(ST_PORT),
-    '--listen', 'false',
-    '--browserLaunchEnabled', 'false',
-], { cwd: ST_DIR, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, FORCE_COLOR: '0' } });
-st.stdout.pipe(stLog); st.stderr.pipe(stLog);
-let stExited = false;
-st.on('exit', c => { stExited = true; console.log(`ST завершилась (код ${c})`); });
+let st = null, stExited = true;
+async function startST() {
+    const proc = spawn(process.execPath, [
+        'server.js',
+        '--configPath', CONFIG_FILE,
+        '--dataRoot', TMP,
+        '--port', String(ST_PORT),
+        '--listen', 'false',
+        '--browserLaunchEnabled', 'false',
+    ], { cwd: ST_DIR, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, FORCE_COLOR: '0' } });
+    stLog.write(`\n===== старт ST ${new Date().toISOString()} =====\n`);
+    proc.stdout.pipe(stLog, { end: false }); proc.stderr.pipe(stLog, { end: false });
+    stExited = false;
+    proc.on('exit', c => { if (proc === st) stExited = true; console.log(`ST завершилась (код ${c})`); });
+    st = proc;
+    await waitFor(async () => {
+        if (stExited) throw Object.assign(new Error('ST упала, см. .tmp-data/_e2e/st-server.log'), { fatal: true });
+        // с enableUserAccounts «/» перенаправляет на страницу входа — достаточно, что сервер отвечает
+        const r = await fetch(BASE, { redirect: 'manual' }); return r.status > 0 && r.status < 500;
+    }, 120000, 500, 'старт ST');
+}
+async function stopST() {
+    if (!st || stExited) return;
+    const done = new Promise(r => st.once('exit', r));
+    st.kill();
+    await Promise.race([done, sleep(15000)]);
+    await sleep(800);
+}
 
 let browser;
 try {
-    await waitFor(async () => { if (stExited) throw new Error('ST упала, см. .tmp-data/_e2e/st-server.log'); const r = await fetch(BASE); return r.ok; }, 120000, 500, 'старт ST');
+    await startST();
     const settingsFile = path.join(USER_DIR, 'settings.json');
     await waitFor(() => fs.existsSync(settingsFile), 30000, 250, 'settings.json в tmp-dir');
     console.log('ST запущена на', BASE);
@@ -120,8 +190,11 @@ try {
     fs.writeFileSync(settingsFile, JSON.stringify(S, null, 4));
 
     // подключение расширения
+    // (0.5.1: точка входа index.js + ES-модули src/*.js; prompts/ и server-plugin/ — как в установленной копии)
     fs.mkdirSync(EXT_DST, { recursive: true });
     for (const f of ['index.js', 'style.css', 'manifest.json']) fs.copyFileSync(path.join(EXT_SRC, f), path.join(EXT_DST, f));
+    for (const d of ['src', 'prompts', 'server-plugin']) if (fs.existsSync(path.join(EXT_SRC, d))) fs.cpSync(path.join(EXT_SRC, d), path.join(EXT_DST, d), { recursive: true });
+    check(fs.existsSync(path.join(EXT_DST, 'src', 'core.js')), 'src/ не скопирована в папку расширения');
 
     // ---------- браузер ----------
     const exe = BROWSERS.find(p => fs.existsSync(p));
@@ -140,15 +213,31 @@ try {
     page.on('dialog', async d => { dialogs.push(d.message()); await d.accept(); });
     page.on('request', r => {
         const u = r.url();
-        if (/\/api\/(backends\/chat-completions\/(generate|status)|secrets\/)/.test(u)) stReqs.push({ url: u.replace(BASE, '/'), body: r.postData() || '' });
+        if (/\/api\/(backends\/chat-completions\/(generate|status)|secrets\/|plugins\/ai-player\/)/.test(u)) stReqs.push({ ts: Date.now(), url: u.replace(BASE, '/'), body: r.postData() || '' });
+    });
+    // ответы плагина браузеру: проверка, что значения ключей в браузер не приходят
+    const pluginResps = [];
+    page.on('response', async r => {
+        const u = r.url();
+        if (/\/api\/plugins\/ai-player\//.test(u)) { try { pluginResps.push({ url: u.replace(BASE, '/'), status: r.status(), text: await r.text() }); } catch { /* */ } }
     });
     page.setDefaultTimeout(30000);
 
     const ctxEval = (fn, ...a) => page.evaluate(fn, ...a);
+    // все тосты страницы (исчезают сами через несколько секунд) — копим с отметкой порядка
+    const installToastSpy = () => ctxEval(() => {
+        window.__e2eToasts = [];
+        window.__e2eToastObs?.disconnect();
+        window.__e2eToastObs = new MutationObserver(ms => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1 && n.classList.contains('toast')) window.__e2eToasts.push({ cls: n.className, text: n.textContent.trim() }); });
+        window.__e2eToastObs.observe(document.body, { childList: true, subtree: true });
+    });
+    const toastMark = () => ctxEval(() => (window.__e2eToasts || []).length);
+    const toastsFrom = mark => ctxEval(m => (window.__e2eToasts || []).slice(m), mark);
     const loadST = async () => {
         await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 120000 });
         await page.waitForFunction(() => window.SillyTavern?.getContext && document.getElementById('aip_play')
             && document.getElementById('aip_overlay') && !document.getElementById('preloader'), { timeout: 120000 });
+        await installToastSpy();
         await sleep(1500);
     };
     const shot = async (name, opts = {}) => { const p = path.join(SCREENS, name); await page.screenshot({ path: p, ...opts }); return p; };
@@ -353,6 +442,25 @@ try {
     // граница: дальше ключ расширения легитимно уходит только в запросы самого агента (turn/thought/test)
     const T_KEY_SAVED = Date.now();
 
+    // режим хранения ключей в окне (#aip_storeMode[data-mode]) — проверка после открытия окна
+    async function storeMode() {
+        await waitFor(() => ctxEval(() => document.getElementById('aip_storeMode').dataset.mode !== 'unknown'), 10000, 200, 'режим хранения определён');
+        return ctxEval(() => { const b = document.getElementById('aip_storeMode'); const r = b.getBoundingClientRect(); return { mode: b.dataset.mode, text: b.textContent.trim(), visible: r.height > 0 }; });
+    }
+    await step('5b. Без плагина: пометка «общий режим» (data-mode=legacy) с инструкцией по установке', async () => {
+        await openSettingsViaMenu();
+        await page.click('.aip-tab[data-tab="conn"]');
+        const m = await storeMode();
+        try { await (await page.$('#aip_storeMode')).screenshot({ path: path.join(SCREENS, 'store-mode-legacy.png') }); } catch { /* */ }
+        const migrateVisible = await ctxEval(() => !document.getElementById('aip_keyMigrate').classList.contains('aip-hidden'));
+        await ctxEval(() => document.getElementById('aip_close').click());
+        evidence.storeLegacy = m;
+        check(m.mode === 'legacy' && m.visible, `режим: ${JSON.stringify(m)}`);
+        check(/не установлен/.test(m.text) && /secrets\.json/.test(m.text) && /enableServerPlugins/.test(m.text), `текст пометки: ${m.text}`);
+        check(!migrateVisible, 'кнопка переноса видна без плагина');
+        return { mode: m.mode, text: m.text.slice(0, 90) + '…' };
+    });
+
     // ---------- Шаг 6 ----------
     const chatSnap = () => ctxEval(() => { const c = SillyTavern.getContext(); return { len: c.chat.length, log: (c.chatMetadata?.aip_log || []).length, busy: getComputedStyle(document.getElementById('mes_stop')).display !== 'none', aipBusy: document.getElementById('aip_play').classList.contains('aip-busy') }; });
     await step('6. ▶: ход агента с бейджем, ответ бота, мысль ★ 7/10, лог в chatMetadata', async () => {
@@ -529,7 +637,7 @@ try {
     // =====================================================================
     const readSecretsRaw = () => fs.readFileSync(path.join(USER_DIR, 'secrets.json'), 'utf8');
     const customSlots = () => { const a = JSON.parse(readSecretsRaw()).api_key_custom; return Array.isArray(a) ? a : []; };
-    const mask = s => String(s ?? '').replaceAll(KEY, '<KEY>').replaceAll(KEY2, '<KEY2>').replaceAll(TAVERN_KEY, '<TAVERN_KEY>');
+    const mask = maskAll;
     const slotView = x => ({ label: x.label, active: x.active, value: x.value === '' ? '(пусто)' : mask(x.value) });
     const keyOptions = () => ctxEval(() => [...document.querySelectorAll('#aip_keySelect option')].map(o => o.textContent));
     const aipProfile = () => ctxEval(() => { const s = SillyTavern.getContext().extensionSettings.ai_player; return s.profiles.find(p => p.id === s.activeProfile); });
@@ -654,9 +762,61 @@ try {
         check(/^AI Player · /.test(k2.label), `метка: ${k2.label}`);
         check(!options.some(o => /заглушк|Пусто/i.test(o)), `заглушка видна в списке: ${options}`);
         check(options.some(o => o.includes(KEY_LABEL)) && options.some(o => o.includes(KEY2_LABEL)), `ключи расширения не все в списке: ${options}`);
-        check(options.some(o => /^↪/.test(o)), `нет пункта «ключ таверны»: ${options}`);
+        // с 0.5.1 ключ основного подключения таверны профилю не предлагается (запасным не используется)
+        check(!options.some(o => /таверн|^↪/i.test(o)), `в списке предлагается ключ таверны: ${options}`);
+        check(options.length === 2, `в списке не только ключи расширения: ${options}`);
         check(!options.join().includes(KEY2) && !options.join().includes(TAVERN_KEY), 'полный ключ в списке');
         return { secrets: evidence.leak2.secrets, options };
+    });
+
+    // ---------- Шаг 12c: профиль без своего ключа ----------
+    const chatLen = () => ctxEval(() => SillyTavern.getContext().chat.length);
+    const genCount = () => stReqs.filter(r => /\/generate$/.test(r.url)).length;
+    const selectProfile = id => ctxEval(id => { const s = document.getElementById('aip_profile'); s.value = id; s.dispatchEvent(new Event('change', { bubbles: true })); }, id);
+    const selectKey = id => ctxEval(id => { const s = document.getElementById('aip_keySelect'); s.value = id; s.dispatchEvent(new Event('change', { bubbles: true })); }, id);
+    let profile1Id = null, profile3Id = null;
+    await step('12c. Профиль без своего ключа: ▶ и «Тест» не отправляют запросов (ключ таверны как запасной не используется)', async () => {
+        const p1 = await aipProfile();
+        profile1Id = p1.id;
+        check(customSlots().find(x => x.value === TAVERN_KEY)?.active, 'у таверны нет активного ключа — сценарий не имеет смысла');
+        await openSettingsViaMenu();
+        await page.click('.aip-tab[data-tab="conn"]');
+        await page.click('#aip_profNew');
+        await sleep(600);
+        const p3 = await aipProfile();
+        check(p3.id !== p1.id && !p3.secretId && !p3.keyId && p3.model === 'mock-player', `новый профиль: ${JSON.stringify(p3)}`);
+        profile3Id = p3.id;
+        await ctxEval(() => document.getElementById('aip_close').click());
+        const n0 = readMock().length, g0 = genCount(), len0 = await chatLen(), mark = await toastMark();
+        await page.click('#aip_play');
+        await sleep(2500);
+        const toasts = await toastsFrom(mark);
+        const modalOpened = await ctxEval(() => document.getElementById('aip_overlay').classList.contains('aip-open'));
+        if (!modalOpened) await openSettingsViaMenu();
+        await ctxEval(() => { document.getElementById('aip_status').textContent = ''; });
+        await page.click('#aip_test');
+        await waitFor(() => ctxEval(() => /^[✔✖]/.test(document.getElementById('aip_status').textContent)), 20000, 200, 'результат «Тест»');
+        const status = await ctxEval(() => document.getElementById('aip_status').textContent);
+        const keyState = await ctxEval(() => document.getElementById('aip_keyState').textContent);
+        const fresh = readMock().slice(n0), g1 = genCount(), len1 = await chatLen();
+        // профилю 3 даём старый первый ключ расширения — он понадобится в фазе B (копия, выбранная в профиле без переноса)
+        const k1 = customSlots().find(x => x.value === KEY);
+        await selectKey(k1.id);
+        await sleep(500);
+        const p3b = await aipProfile();
+        await selectProfile(p1.id);
+        await sleep(500);
+        await ctxEval(() => document.getElementById('aip_close').click());
+        evidence.noOwnKey = { toasts, status, keyState, modalOpened, fresh: fresh.map(r => r.kind), browserGenerate: g1 - g0, p3secret: p3b.secretId === k1.id };
+        const warn = toasts.find(t => /warning/.test(t.cls) && /Сохраните API-ключ/.test(t.text));
+        check(!fresh.length, `к моку ушли запросы: ${fresh.map(r => `${r.kind} ${mask(r.headers.authorization)}`)}`);
+        check(g1 === g0, 'браузер отправил generate');
+        check(len1 === len0, 'в чат что-то добавилось');
+        check(warn, `нет предупреждения «Сохраните API-ключ»: ${JSON.stringify(toasts)}`);
+        check(status.startsWith('✖') && /ключ/i.test(status), `«Тест»: ${status}`);
+        check(/ключ основного подключения таверны AI Player не использует/i.test(keyState), `пояснение у ключа: ${keyState}`);
+        check(p3b.secretId === k1.id, 'профилю 3 не назначен старый ключ');
+        return { toast: warn.text, test: status, mockRequests: 0 };
     });
 
     // ---------- Шаг 13: перегенерация ----------
@@ -681,6 +841,98 @@ try {
         check(bots.length >= 1 && bots.every(b => b.headers.authorization === `Bearer ${TAVERN_KEY}`), `бот не с ключом таверны: ${bots.map(b => mask(b.headers.authorization))}`);
         check(thoughts.length === 1 && thoughts[0].headers.authorization === `Bearer ${KEY2}`, `мысль не с ключом расширения: ${thoughts.map(b => mask(b.headers.authorization))}`);
         return { items: `${t0.items}→${t1.items}`, botAuth: bots.map(b => mask(b.headers.authorization)), thoughtAuth: mask(thoughts[0].headers.authorization) };
+    });
+
+    // ---------- Шаг 13b: несколько перегенераций подряд ----------
+    const lastBotState = () => ctxEval(() => {
+        const no = t => { const m = [...String(t).matchAll(/ответ №(\d+)/g)]; return m.length ? Number(m.at(-1)[1]) : null; };
+        const c = SillyTavern.getContext(); const idx = c.chat.length - 1; const m = c.chat[idx];
+        const log = c.chatMetadata.aip_log || [];
+        return { idx, sendDate: m.send_date, isUser: m.is_user, swipeId: m.swipe_id ?? 0, swipes: m.swipes?.length ?? 1, no: no(m.mes),
+            entries: log.filter(e => e.mesId === idx).map(e => ({ sameDate: e.sendDate === m.send_date, swipeId: e.swipeId ?? 0, no: no(e.text) })),
+            log: log.length, items: document.querySelectorAll('#aip_thoughts .aip-th-item').length };
+    });
+    await step('13b. Три перегенерации подряд: каждая → одно впечатление о своей версии, прежние убираются', async () => {
+        const n0 = readMock().length;
+        const rounds = [];
+        for (let i = 0; i < 3; i++) {
+            const before = await lastBotState();
+            await stMenu('option_regenerate');
+            await waitFor(async () => {
+                const s = await lastBotState();
+                return s.sendDate !== before.sendDate && !s.isUser && s.entries.some(e => e.sameDate) && await isIdle();
+            }, 60000, 300, `впечатление после перегенерации ${i + 1}`);
+            await sleep(1000);
+            rounds.push(await lastBotState());
+        }
+        const fresh = readMock().slice(n0);
+        evidence.regen3 = { rounds, fresh: fresh.map(r => `${r.kind}${r.botNo ? '#' + r.botNo : ''}${r.aboutNo ? '→' + r.aboutNo : ''}`) };
+        try { await (await page.$('#aip_thoughts')).screenshot({ path: path.join(SCREENS, 'thoughts-regenerate-x3.png') }); } catch { /* */ }
+        const bad = rounds.filter(r => r.entries.length !== 1 || !r.entries[0].sameDate || r.entries[0].no !== r.no || r.items !== r.log);
+        check(!fresh.some(r => r.kind === 'turn'), 'при перегенерации агент сделал ход');
+        check(fresh.filter(r => r.kind === 'thought').length === 3, `запросов впечатлений: ${fresh.filter(r => r.kind === 'thought').length}`);
+        check(new Set(rounds.map(r => r.no)).size === 3, `версии ответа не различаются: ${rounds.map(r => r.no)}`);
+        if (bad.length) return { ok: false, details: { bad, rounds } };
+        return rounds.map(r => `#${r.idx}: ответ №${r.no} → впечатление о №${r.entries[0].no}; в журнале ${r.log}, в окне ${r.items}`);
+    });
+
+    // ---------- Шаг 13c: привязка впечатлений: журнал, окно, экспорт ----------
+    // Каждое впечатление в журнале должно относиться к существующей версии ответа (сообщение, свайп, дата),
+    // и мок называет номер ответа, о котором его спросили, — номер должен совпасть с текстом этой версии.
+    const bindingReport = () => ctxEval(() => {
+        const no = t => { const m = [...String(t).matchAll(/ответ №(\d+)/g)]; return m.length ? Number(m.at(-1)[1]) : null; };
+        const c = SillyTavern.getContext(), cid = c.getCurrentChatId();
+        const log = c.chatMetadata.aip_log || [];
+        const problems = [];
+        const rows = log.map(e => {
+            const m = c.chat[e.mesId], sw = e.swipeId ?? 0;
+            const text = m ? (Array.isArray(m.swipes) ? m.swipes[sw] : sw === 0 ? m.mes : undefined) : undefined;
+            const date = m ? (m.swipe_info?.[sw]?.send_date ?? (sw === (m.swipe_id ?? 0) ? m.send_date : undefined)) : undefined;
+            const row = { mesId: e.mesId, swipeId: sw, aboutNo: no(e.text), versionNo: no(text), dateOk: e.sendDate === date };
+            if (!m || m.is_user || m.is_system) problems.push(`#${e.mesId}: сообщения нет / не бот`);
+            else if (text === undefined) problems.push(`#${e.mesId} свайп ${sw}: такой версии нет`);
+            else if (row.aboutNo !== row.versionNo) problems.push(`#${e.mesId} свайп ${sw}: впечатление о ответе №${row.aboutNo}, а версия — №${row.versionNo}`);
+            if (m && !row.dateOk) problems.push(`#${e.mesId} свайп ${sw}: дата записи не совпадает с датой версии`);
+            if (e.chatId && e.chatId !== cid) problems.push(`#${e.mesId}: из другого чата`);
+            return row;
+        });
+        const items = [...document.querySelectorAll('#aip_thoughts .aip-th-item')].map(n => ({ id: n.querySelector('.aip-th-id')?.textContent, about: no(n.textContent) }));
+        if (items.length !== log.length) problems.push(`в окне ${items.length} карточек, в журнале ${log.length}`);
+        items.forEach((it, i) => { if (log[i] && it.about !== no(log[i].text)) problems.push(`карточка ${i}: о №${it.about}, запись журнала о №${no(log[i].text)}`); });
+        return { problems, rows, items: items.length, log: log.length };
+    });
+    const exportReport = () => ctxEval(async () => {
+        const no = t => { const m = [...String(t).matchAll(/ответ №(\d+)/g)]; return m.length ? Number(m.at(-1)[1]) : null; };
+        let blob = null;
+        const origUrl = URL.createObjectURL, origClick = HTMLAnchorElement.prototype.click;
+        URL.createObjectURL = b => { blob = b; return 'blob:e2e-export'; };
+        HTMLAnchorElement.prototype.click = function () { /* не скачивать */ };
+        try { document.getElementById('aip_expJSON').click(); } finally { URL.createObjectURL = origUrl; HTMLAnchorElement.prototype.click = origClick; }
+        if (!blob) return { error: 'экспорт не создал файл' };
+        const d = JSON.parse(await blob.text());
+        const c = SillyTavern.getContext();
+        const problems = [];
+        let total = 0;
+        for (const t of d.turns) {
+            for (const r of t.reactions) {
+                total++;
+                const m = c.chat[t.index];
+                const text = m?.swipes?.[r.swipe ?? 0] ?? (r.swipe ? undefined : m?.mes);
+                if (no(r.text) !== no(text)) problems.push(`экспорт #${t.index} свайп ${r.swipe}: впечатление о №${no(r.text)}, версия №${no(text)}`);
+            }
+        }
+        const log = (c.chatMetadata.aip_log || []).length;
+        if (total !== log) problems.push(`в экспорте впечатлений ${total}, в журнале ${log}`);
+        if (/sk-e2e|secret_id|keyId/.test(JSON.stringify(d))) problems.push('в экспорте ключ/secret_id/keyId');
+        return { problems, total, log };
+    });
+    await step('13c. Привязка: в журнале, окне и экспорте .json — только впечатления о существующих версиях ответа', async () => {
+        const b = await bindingReport();
+        const x = await exportReport();
+        evidence.binding = { journal: b, export: x };
+        const problems = [...b.problems, ...(x.problems || [x.error])];
+        if (problems.length) return { ok: false, details: problems };
+        return { journal: b.log, window: b.items, export: x.total };
     });
 
     // ---------- Шаг 14: кнопка «Новая мысль» не ловит клики в закрытом окне ----------
@@ -727,6 +979,41 @@ try {
         check(!after.open, 'окно не закрылось');
         check(!after.hitInExt, `в точке кнопки элемент расширения: ${after.hit}`);
         return { before: { hit: btn.hit, at: [Math.round(btn.cx), Math.round(btn.cy)] }, after: { hit: after.hit, hasNew: after.hasNew, btn: after.btn }, regens };
+    });
+
+    // ---------- Шаг 14b: прокрутка окна впечатлений ----------
+    await step('14b. Прокрутка окна впечатлений: внизу — автопрокрутка к новому; листаешь вверх — позиция не сбивается; «Новое впечатление» → вниз', async () => {
+        const scrollInfo = () => ctxEval(() => { const t = document.getElementById('aip_thoughts'), b = t.querySelector('.aip-th-body');
+            return { open: t.classList.contains('aip-open'), top: Math.round(b.scrollTop), gap: Math.round(b.scrollHeight - b.scrollTop - b.clientHeight), scrollable: b.scrollHeight - b.clientHeight, hasNew: t.classList.contains('aip-has-new'), items: t.querySelectorAll('.aip-th-item').length }; });
+        const turnAndWait = async what => {
+            const before = await thoughtsState();
+            await page.click('#aip_play');
+            await waitFor(async () => { const a = await thoughtsState(); return a.log > before.log && await isIdle(); }, 60000, 300, what);
+            await sleep(900);
+        };
+        await ctxEval(() => { const t = document.getElementById('aip_thoughts'); if (!t.classList.contains('aip-open')) document.getElementById('aip_menu_th').click(); });
+        await sleep(400);
+        // 1) пользователь внизу → новое впечатление прокручивается в видимую область
+        await ctxEval(() => { const b = document.querySelector('#aip_thoughts .aip-th-body'); b.scrollTop = b.scrollHeight; b.dispatchEvent(new Event('scroll')); });
+        await sleep(300);
+        await turnAndWait('впечатление (окно внизу)');
+        const atBottom = await scrollInfo();
+        // 2) пользователь листает старое → позиция сохраняется, появляется кнопка
+        await ctxEval(() => { const b = document.querySelector('#aip_thoughts .aip-th-body'); b.scrollTop = 0; b.dispatchEvent(new Event('scroll')); });
+        await sleep(300);
+        await turnAndWait('впечатление (окно прокручено вверх)');
+        const scrolledUp = await scrollInfo();
+        // 3) кнопка «Новое впечатление» прокручивает к последнему
+        let clicked = true;
+        try { await page.click('#aip_thoughts .aip-th-newbtn'); } catch { clicked = false; }
+        await sleep(600);
+        const afterBtn = await scrollInfo();
+        evidence.thoughtsScroll = { atBottom, scrolledUp, afterBtn, clicked };
+        check(atBottom.scrollable > 0, `окно не прокручивается (${atBottom.scrollable}px)`);
+        check(atBottom.gap < 40 && !atBottom.hasNew, `окно внизу не прокрутилось к новому: ${JSON.stringify(atBottom)}`);
+        check(scrolledUp.top < 40 && scrolledUp.hasNew, `позиция сбита или нет кнопки: ${JSON.stringify(scrolledUp)}`);
+        check(clicked && afterBtn.gap < 40 && !afterBtn.hasNew, `кнопка не прокрутила вниз: ${JSON.stringify(afterBtn)}`);
+        return { atBottom: `gap ${atBottom.gap}px`, scrolledUp: `top ${scrolledUp.top}px, кнопка ${scrolledUp.hasNew}`, afterBtn: `gap ${afterBtn.gap}px` };
     });
 
     // ---------- Шаг 15: Claude через реверс-прокси ----------
@@ -843,30 +1130,47 @@ try {
         return evidence.proxyPass;
     });
 
-    await step('15d. Claude-прокси с пустым паролем (подсказка «пусто, если пароль не нужен»)', async () => {
+    // Ожидаемое поведение (ST 1.19 не отправляет запрос к Claude-прокси без пароля): пустой пароль
+    // отклоняется расширением ДО запроса, с понятным сообщением; к прокси ничего не уходит.
+    await step('15d. Claude-прокси с пустым паролем: отклонён до запроса, к прокси ничего не ушло, сообщение понятно', async () => {
         await openSettingsViaMenu();
         await page.click('.aip-tab[data-tab="conn"]');
         await page.click('#aip_p_proxyPassword', { clickCount: 3 }); await page.keyboard.press('Backspace');
-        await sleep(200);
-        const n0 = readMock().length;
+        await sleep(300);
+        const emptied = (await aipProfile()).proxyPassword === '';
+        const n0 = readMock().length, g0 = genCount(), len0 = await chatLen();
         await ctxEval(() => { document.getElementById('aip_status').textContent = ''; });
         await page.click('#aip_test');
         await waitFor(() => ctxEval(() => /^[✔✖]/.test(document.getElementById('aip_status').textContent)), 30000, 200, 'результат «Тест»');
         const status = await ctxEval(() => document.getElementById('aip_status').textContent);
-        const sent = readMock().slice(n0).filter(r => r.api === 'anthropic').length;
         const placeholder = await ctxEval(() => document.getElementById('aip_p_proxyPassword').placeholder);
         await shot('settings-claude-proxy-nopass.png');
+        // ▶ с пустым паролем
+        await ctxEval(() => document.getElementById('aip_close').click());
+        const mark = await toastMark();
+        await page.click('#aip_play');
+        await sleep(2500);
+        const toasts = await toastsFrom(mark);
+        const fresh = readMock().slice(n0), g1 = genCount(), len1 = await chatLen();
         // вернуть пароль
+        if (!(await ctxEval(() => document.getElementById('aip_overlay').classList.contains('aip-open')))) await openSettingsViaMenu();
+        await page.click('.aip-tab[data-tab="conn"]');
+        await page.click('#aip_p_proxyPassword', { clickCount: 3 }); await page.keyboard.press('Backspace');
         await page.type('#aip_p_proxyPassword', PROXY_PASS);
-        await sleep(200);
+        await sleep(300);
         const restored = (await aipProfile()).proxyPassword === PROXY_PASS;
         await ctxEval(() => document.getElementById('aip_close').click());
-        const stLogTail = fs.readFileSync(path.join(OUT, 'st-server.log'), 'utf8').split('\n').filter(l => /Claude API key is missing/.test(l)).slice(-1)[0] || null;
-        evidence.emptyProxyPass = { status, requestsToProxy: sent, placeholder, stLog: stLogTail };
+        const warn = toasts.find(t => /warning|error/.test(t.cls) && /парол/i.test(t.text));
+        evidence.emptyProxyPass = { status, placeholder, toasts, requests: fresh.map(r => `${r.kind} ${r.url}`), browserGenerate: g1 - g0 };
+        check(emptied, 'пароль в профиле не очистился');
+        check(!fresh.length, `к прокси/моку ушли запросы: ${evidence.emptyProxyPass.requests}`);
+        check(g1 === g0, 'браузер отправил generate');
+        check(len1 === len0, 'в чат что-то добавилось');
+        check(status.startsWith('✖') && /парол|ключ/i.test(status), `«Тест» не отклонил пустой пароль понятно: ${status}`);
+        check(warn, `▶: нет понятного предупреждения о пароле: ${JSON.stringify(toasts)}`);
+        check(/обязателен|любой символ/.test(placeholder), `подсказка поля: ${placeholder}`);
         check(restored, 'пароль не восстановлен');
-        if (status.startsWith('✔')) return { status };
-        // ST 1.19 sendClaudeRequest: apiKey = proxy_password; if (!apiKey) → 400 «Claude API key is missing» — до прокси не доходит
-        return { known: true, details: `БАГ: при пустом пароле прокси «Тест» → ${status}; запросов к прокси: ${sent}; лог ST: ${stLogTail}` };
+        return { test: status, play: warn.text, placeholder, requestsToProxy: 0 };
     });
 
     // ---------- Шаг 16: ▶ без открытого чата ----------
@@ -880,12 +1184,7 @@ try {
         await ctxEval(() => toastr.clear());
         await sleep(300);
         // все тосты за время проверки (они исчезают сами через несколько секунд)
-        await ctxEval(() => {
-            window.__e2eToasts = [];
-            window.__e2eToastObs?.disconnect();
-            window.__e2eToastObs = new MutationObserver(ms => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1 && n.classList.contains('toast')) window.__e2eToasts.push({ cls: n.className, text: n.textContent.trim() }); });
-            window.__e2eToastObs.observe(document.body, { childList: true, subtree: true });
-        });
+        const tmark = await toastMark();
         const c0 = consoleLog.length, pe0 = pageErrors.length;
         const playVisible = await ctxEval(() => { const b = document.getElementById('aip_play'); const r = b.getBoundingClientRect(); return getComputedStyle(b).display !== 'none' && r.width > 0; });
         let clickedVia = 'mouse';
@@ -893,7 +1192,7 @@ try {
         await sleep(1200);
         await shot('no-chat-warning.png');
         await sleep(3800);
-        const toasts = await ctxEval(() => { window.__e2eToastObs.disconnect(); return window.__e2eToasts; });
+        const toasts = await toastsFrom(tmark);
         const st1 = await ctxEval(() => { const c = SillyTavern.getContext(); return { chatId: c.getCurrentChatId() ?? null, characterId: c.characterId ?? null, name2: c.name2, chatLen: c.chat.length, input: document.getElementById('send_textarea').value }; });
         const chats1 = listChats(), fresh = readMock().slice(n0), g1 = stReqs.filter(r => r.url.includes('/generate')).length;
         const modalOpen = await ctxEval(() => document.getElementById('aip_overlay').classList.contains('aip-open'));
@@ -929,6 +1228,598 @@ try {
         }
     });
 
+    // =====================================================================
+    // Фаза B: серверный плагин ключей (ТЗ п.1) и аварийные сценарии п.2–4
+    // =====================================================================
+    const secretsNorm = () => { const j = JSON.parse(readSecretsRaw()); return JSON.stringify(Object.keys(j).sort().map(k => [k, j[k]])); };
+    const readKeys = () => fs.existsSync(KEYS_FILE) ? (JSON.parse(fs.readFileSync(KEYS_FILE, 'utf8')).keys || []) : [];
+    const keysView = () => readKeys().map(k => ({ id: k.id, label: k.label, provider: k.provider, base: k.base, value: mask(k.value) }));
+    const secretsChanges = r0 => stReqs.slice(r0).filter(r => /\/api\/secrets\/(write|rotate|delete)/.test(r.url)).map(r => r.url);
+    const settingsRaw = () => fs.readFileSync(path.join(USER_DIR, 'settings.json'), 'utf8');
+    const stApi = (url, body) => ctxEval(async (url, body) => {
+        const r = await fetch(url, { method: 'POST', headers: SillyTavern.getContext().getRequestHeaders(), body: JSON.stringify(body ?? {}) });
+        return { ok: r.ok, status: r.status, j: await r.json().catch(() => null) };
+    }, url, body);
+    async function openSeraphina() {
+        await ctxEval(async () => { const c = SillyTavern.getContext(); await c.selectCharacterById(String(c.characters.findIndex(x => x.name === 'Seraphina'))); });
+        await waitFor(() => ctxEval(() => SillyTavern.getContext().chat.length >= 3 && document.querySelectorAll('#chat .mes').length >= 3), 20000, 300, 'чат Seraphina');
+        await sleep(800);
+    }
+    async function openConn(profileId) {
+        await openSettingsViaMenu();
+        await page.click('.aip-tab[data-tab="conn"]');
+        if (profileId && (await aipProfile()).id !== profileId) { await selectProfile(profileId); await sleep(600); }
+        await waitFor(() => ctxEval(() => document.getElementById('aip_storeMode').dataset.mode !== 'unknown'), 10000, 200, 'режим хранения');
+        await sleep(300);
+    }
+    const closeModalUi = () => ctxEval(() => document.getElementById('aip_close').click());
+    async function addKeyViaUi(label, value) {
+        await ctxEval(() => { document.getElementById('aip_addKey').open = true; });
+        await page.click('#aip_keyLabel', { clickCount: 3 }); await page.keyboard.press('Backspace');
+        await page.type('#aip_keyLabel', label);
+        await page.type('#aip_keyInput', value);
+        await page.click('#aip_keySave');
+        await waitFor(() => ctxEval(l => [...document.querySelectorAll('#aip_keySelect option')].some(o => o.textContent.includes(l)) && document.getElementById('aip_keyState').dataset.state === 'ok', label), 10000, 200, `ключ «${label}» в списке`);
+        await sleep(500);
+    }
+    async function playAndWait(what) {
+        const before = await chatSnap();
+        await page.click('#aip_play');
+        await waitFor(async () => { const s = await chatSnap(); return s.len >= before.len + 2 && s.log >= before.log + 1 && !s.busy && !s.aipBusy; }, 60000, 300, what);
+        await sleep(800);
+    }
+    // ход ▶ через плагин: запросы агента — с ключом расширения, ответ бота — с ключом таверны (или без ключа)
+    async function playViaPlugin(expectKey, botKey, what) {
+        const n0 = readMock().length, r0 = stReqs.length;
+        await playAndWait(what);
+        const fresh = readMock().slice(n0), reqs = stReqs.slice(r0);
+        const problems = [];
+        const agent = fresh.filter(r => ['turn', 'thought', 'memory'].includes(r.kind)), bots = fresh.filter(r => r.kind === 'bot');
+        if (fresh.filter(r => r.kind === 'turn').length !== 1) problems.push(`ходов: ${fresh.filter(r => r.kind === 'turn').length}`);
+        if (!fresh.some(r => r.kind === 'thought')) problems.push('нет запроса впечатления');
+        for (const r of agent) if (r.headers.authorization !== `Bearer ${expectKey}`) problems.push(`${r.kind}: Authorization ${mask(r.headers.authorization ?? '(нет)')}`);
+        if (!bots.length) problems.push('нет запроса бота');
+        for (const b of bots) {
+            const a = b.headers.authorization ?? '';
+            if (botKey ? a !== `Bearer ${botKey}` : ALL_SECRETS.some(s => a.includes(s))) problems.push(`бот: Authorization ${mask(a || '(нет)')}`);
+        }
+        for (const r of fresh) if (ALL_SECRETS.some(s => r.raw.includes(s))) problems.push(`${r.kind}: секрет в теле запроса`);
+        const pg = reqs.filter(r => /plugins\/ai-player\/generate$/.test(r.url));
+        if (pg.length < 2) problems.push(`запросов браузер→плагин /generate: ${pg.length}`);
+        if (pg.some(r => ALL_SECRETS.some(s => r.body.includes(s)))) problems.push('секрет в теле запроса браузер→плагин');
+        if (pg.some(r => !/"keyId":"[^"]+"/.test(r.body))) problems.push('в запросе к плагину нет keyId');
+        if (reqs.some(r => /backends\/chat-completions\/generate$/.test(r.url) && /mock-player|claude-/.test(r.body))) problems.push('запрос агента ушёл через бэкенд ST, а не через плагин');
+        if (secretsChanges(r0).length) problems.push(`расширение меняло secrets.json: ${secretsChanges(r0)}`);
+        return { problems, requests: fresh.map(r => `${r.kind} ${mask(r.headers.authorization ?? r.headers['x-api-key'] ?? '(нет)')}`) };
+    }
+    async function editMessage(id, suffix) {
+        return ctxEval(async (id, suffix) => {
+            const c = SillyTavern.getContext(); const before = c.chat[id].mes;
+            const w = ms => new Promise(r => setTimeout(r, ms));
+            $(`#chat .mes[mesid="${id}"] .mes_edit`).trigger('click');
+            for (let i = 0; i < 40 && !document.getElementById('curEditTextarea'); i++) await w(100);
+            const ta = document.getElementById('curEditTextarea');
+            if (!ta) return { ok: false, why: 'редактор ST не открылся' };
+            $(ta).val(ta.value + suffix).trigger('input');
+            $(`#chat .mes[mesid="${id}"] .mes_edit_done`).trigger('click');
+            for (let i = 0; i < 40 && c.chat[id].mes === before; i++) await w(100);
+            return { ok: c.chat[id].mes !== before };
+        }, id, suffix);
+    }
+    const thoughtFailState = () => ctxEval(() => {
+        const t = document.getElementById('aip_thoughts'), f = t.querySelector('.aip-th-fail'), r = f.getBoundingClientRect();
+        const a = f.querySelector('[data-act="retry"]');
+        return { failed: t.classList.contains('aip-has-failed'), visible: getComputedStyle(f).display !== 'none' && r.height > 0, text: f.textContent.trim(), retry: a ? a.textContent.trim() : null };
+    });
+    const ensureThoughtsOpen = async () => {
+        await ctxEval(() => { const t = document.getElementById('aip_thoughts'); if (!t.classList.contains('aip-open')) document.getElementById('aip_menu_th').click(); if (t.classList.contains('aip-min')) t.querySelector('[data-act="min"]').click(); });
+        await sleep(400);
+    };
+    const vaultGuard = () => check(vaultOk, 'плагин не загрузился (P1-0) — проверка невозможна');
+
+    let vaultOk = false;
+    await step('P1-0. Установка плагина: server-plugin → SillyTavern/plugins/ai-player, enableServerPlugins: true, перезапуск ST', async () => {
+        const sec0 = secretsNorm();
+        await stopST();
+        installPlugin();
+        patchConfig({ enableServerPlugins: true });
+        await startST();
+        await page.setUserAgent(UA0);
+        await page.setViewport({ width: 1366, height: 900 });
+        await loadST();
+        await openSeraphina();
+        const log = fs.readFileSync(path.join(OUT, 'st-server.log'), 'utf8');
+        const probe = await stApi('/api/plugins/ai-player/probe', {});
+        evidence.pluginInstall = { preexisted: pluginPreexisted, backup: !!pluginBackup, loadedLine: log.match(/\[AI Player plugin\][^\n]*/)?.[0], probe };
+        check(/\[AI Player plugin\] [\d.]+ loaded/.test(log), 'в логе ST нет «[AI Player plugin] … loaded»');
+        check(probe.ok && probe.j?.ok, `probe: ${JSON.stringify(probe)}`);
+        check(secretsNorm() === sec0, 'secrets.json изменился при перезапуске');
+        vaultOk = true;
+        return { probe: probe.j, pluginFolderPreexisted: pluginPreexisted };
+    });
+
+    await step('P1-1. С плагином: пометка data-mode=vault; у профиля со старым secretId — кнопки «Перенести» и «Удалить старые общие копии»', async () => {
+        vaultGuard();
+        await openConn(profile1Id);
+        const m = await storeMode();
+        await waitFor(() => ctxEval(() => !document.getElementById('aip_keyMigrate').classList.contains('aip-hidden')), 10000, 200, 'кнопка переноса').catch(() => null);
+        const st = await ctxEval(() => ({ migrate: !document.getElementById('aip_keyMigrate').classList.contains('aip-hidden'), clean: !document.getElementById('aip_legacyClean').classList.contains('aip-hidden'), keyState: document.getElementById('aip_keyState').textContent, options: [...document.querySelectorAll('#aip_keySelect option')].map(o => o.textContent) }));
+        const p = await aipProfile();
+        await shotKeyCard('keys-vault-before-migrate.png');
+        await closeModalUi();
+        evidence.vaultMode = { mode: m, ui: st };
+        check(m.mode === 'vault' && m.visible && /Плагин AI Player/.test(m.text), `режим: ${JSON.stringify(m)}`);
+        check(p.secretId && !p.keyId, `профиль: secretId=${!!p.secretId} keyId=${p.keyId}`);
+        check(st.migrate && st.clean, `кнопки: ${JSON.stringify(st)}`);
+        check(/Перенести в хранилище AI Player/.test(st.keyState), `пояснение: ${st.keyState}`);
+        return { mode: m.mode, options: st.options };
+    });
+
+    let secAtMigration = null;
+    await step('P1-2. Перенос ключа: keys/import на сервере, ключ в keys.json плагина, secrets.json не изменился', async () => {
+        vaultGuard();
+        const k2 = customSlots().find(x => x.value === KEY2);
+        await openConn(profile1Id);
+        const p0 = await aipProfile();
+        check(k2 && p0.secretId === k2.id, 'профиль 1 не на старом ключе 2');
+        const sec0 = secretsNorm(), r0 = stReqs.length, pr0 = pluginResps.length, mark = await toastMark();
+        await page.click('#aip_keyMigrate');
+        await waitFor(async () => !!(await aipProfile()).keyId, 10000, 200, 'keyId в профиле');
+        await sleep(2500);   // saveSettingsDebounced
+        const p1 = await aipProfile();
+        const reqs = stReqs.slice(r0), keys = readKeys(), toasts = await toastsFrom(mark);
+        const kv = keys.find(k => k.id === p1.keyId);
+        const imp = reqs.find(r => /keys\/import$/.test(r.url));
+        const migrateHidden = await ctxEval(() => document.getElementById('aip_keyMigrate').classList.contains('aip-hidden'));
+        await closeModalUi();
+        evidence.migration = { importBody: imp && mask(imp.body), keys: keysView(), profile: { keyId: !!p1.keyId, secretId: p1.secretId, legacySecretId: p1.legacySecretId }, toasts: toasts.map(t => t.text) };
+        secAtMigration = sec0;
+        check(imp && imp.body.includes(k2.id) && !ALL_SECRETS.some(s => imp.body.includes(s)), `запрос keys/import: ${imp && mask(imp.body)}`);
+        check(kv && kv.value === KEY2 && kv.provider === 'openai' && kv.base === MOCK_URL, `в keys.json: ${JSON.stringify(keysView())}`);
+        check(!p1.secretId && p1.legacySecretId === k2.id, `профиль после переноса: ${JSON.stringify(evidence.migration.profile)}`);
+        check(secretsNorm() === sec0 && !secretsChanges(r0).length, `secrets.json изменился: ${secretsChanges(r0)}`);
+        check(!pluginResps.slice(pr0).some(r => ALL_SECRETS.some(s => r.text.includes(s))), 'значение ключа пришло в браузер в ответе плагина');
+        check(!settingsRaw().includes(KEY2), 'ключ в settings.json');
+        check(migrateHidden, 'кнопка переноса осталась видна');
+        check(toasts.some(t => /перенесён/.test(t.text)), `нет подтверждения: ${toasts.map(t => t.text)}`);
+        return { keyInVault: { label: kv.label, base: kv.base }, secretsUnchanged: true };
+    });
+
+    await step('P1-3. ▶ с перенесённым ключом: ход/впечатление через плагин с ключом расширения, бот — с ключом таверны; secrets.json тот же', async () => {
+        vaultGuard();
+        const r = await playViaPlugin(KEY2, TAVERN_KEY, 'ход через плагин (перенесённый ключ)');
+        evidence.playMigrated = r;
+        if (secretsNorm() !== secAtMigration) r.problems.push('secrets.json изменился до очистки');
+        if (r.problems.length) return { ok: false, details: r.problems };
+        return r.requests;
+    });
+
+    await step('P1-4. «Удалить старые общие копии»: удалены только неактивные и не выбранные в профилях; активный ключ таверны прежний', async () => {
+        vaultGuard();
+        // пользователь сделал одну копию AI Player активным ключом основного подключения (в менеджере ключей ST)
+        const w = await stApi('/api/secrets/write', { key: 'api_key_custom', value: KEY_ACT, label: 'AI Player · активная копия' });
+        check(w.ok, `не записали активную копию: ${w.status}`);
+        const before = customSlots();
+        const act = before.find(x => x.active), k1 = before.find(x => x.value === KEY), k2 = before.find(x => x.value === KEY2);
+        const ph = before.find(x => PLACEHOLDER_RE.test(x.label || '')), tv = before.find(x => x.value === TAVERN_KEY);
+        check(act?.value === KEY_ACT, 'копия не стала активной');
+        const p3 = (await ctxEval(() => SillyTavern.getContext().extensionSettings.ai_player.profiles)).find(p => p.id === profile3Id);
+        check(p3?.secretId === k1?.id, 'профиль 3 не держит старый ключ 1');
+        await openConn(profile1Id);
+        const d0 = dialogs.length, mark = await toastMark(), r0 = stReqs.length;
+        await page.click('#aip_legacyClean');
+        await waitFor(async () => (await toastsFrom(mark)).some(t => /Удалено|Удалять нечего/.test(t.text)), 15000, 200, 'итог очистки');
+        await sleep(1500);
+        await closeModalUi();
+        const after = customSlots(), ids = new Set(after.map(x => x.id));
+        const deletes = stReqs.slice(r0).filter(r => /secrets\/delete/.test(r.url)).map(r => JSON.parse(r.body).id);
+        const confirmText = dialogs.slice(d0).join('\n---\n');
+        const toasts = (await toastsFrom(mark)).map(t => t.text);
+        const p1 = await aipProfile();
+        evidence.cleanup = { before: before.map(slotView), after: after.map(slotView), deleted: deletes.length, confirm: confirmText, toasts };
+        const expectDel = [k2?.id, ph?.id].filter(Boolean);
+        check(confirmText.includes('Удалить из общего хранилища'), `не было подтверждения: ${confirmText}`);
+        check(expectDel.every(id => !ids.has(id)), `не удалены неактивные неиспользуемые: ${JSON.stringify(after.map(slotView))}`);
+        check(ids.has(k1.id), 'удалён ключ, выбранный в профиле без переноса');
+        check(ids.has(act.id) && after.find(x => x.active)?.id === act.id, 'активная копия удалена или активный ключ сменился');
+        check(ids.has(tv.id), 'удалён собственный ключ таверны');
+        check(deletes.length === expectDel.length, `удалений: ${deletes.length}, ожидалось ${expectDel.length}`);
+        check(!p1.legacySecretId, 'в профиле осталась ссылка на удалённую копию');
+        // вернуть таверне её собственный ключ (как пользователь в менеджере ключей ST)
+        const rot = await stApi('/api/secrets/rotate', { key: 'api_key_custom', id: tv.id });
+        check(rot.ok && customSlots().find(x => x.active)?.value === TAVERN_KEY, 'не удалось вернуть активный ключ таверны');
+        return { deleted: deletes.length, kept: after.map(x => slotView(x).label), activeKept: 'AI Player · активная копия' };
+    });
+
+    let secBaseline = null;
+    await step('P1-5. Ключ через окно AI Player с плагином: лёг в keys.json, secrets.json не изменился, в settings.json и списке значения нет', async () => {
+        vaultGuard();
+        secBaseline = secretsNorm();
+        const r0 = stReqs.length, pr0 = pluginResps.length;
+        await openConn(profile1Id);
+        await addKeyViaUi(KEY_V_LABEL, KEY_V);
+        await sleep(2500);
+        const p = await aipProfile();
+        const kv = readKeys().find(k => k.id === p.keyId);
+        const options = await keyOptions();
+        const keyState = await ctxEval(() => document.getElementById('aip_keyState').textContent);
+        await shotKeyCard('keys-vault-added.png');
+        await closeModalUi();
+        evidence.vaultAdd = { options, keyState, keys: keysView() };
+        check(kv && kv.value === KEY_V && kv.base === MOCK_URL && kv.label === KEY_V_LABEL, `keys.json: ${JSON.stringify(keysView())}`);
+        check(!p.secretId, 'у профиля остался secretId');
+        check(secretsNorm() === secBaseline && !secretsChanges(r0).length, `secrets.json изменился: ${secretsChanges(r0)}`);
+        check(!settingsRaw().includes(KEY_V), 'ключ в settings.json');
+        check(!options.join().includes(KEY_V) && options.some(o => o.includes(KEY_V_LABEL) && o.includes('…444')), `список: ${options}`);
+        check(!pluginResps.slice(pr0).some(r => r.text.includes(KEY_V)), 'значение ключа пришло в браузер');
+        check(/хранилища AI Player/.test(keyState), `состояние: ${keyState}`);
+        return { options, keyState };
+    });
+
+    await step('P1-6. ▶ с новым ключом: ход и впечатление — Authorization = ключ расширения (через плагин), бот — ключ таверны', async () => {
+        vaultGuard();
+        const r = await playViaPlugin(KEY_V, TAVERN_KEY, 'ход через плагин (новый ключ)');
+        evidence.playVault = r;
+        if (secretsNorm() !== secBaseline) r.problems.push('secrets.json изменился');
+        if (r.problems.length) return { ok: false, details: r.problems };
+        return r.requests;
+    });
+
+    // ---------- П.2: записи + задержка + правка учтённого сообщения ----------
+    await step('P2. Записи: во время задержанного запроса правят учтённое сообщение → устаревший результат отброшен; без правки — записи обновляются', async () => {
+        vaultGuard();
+        await ctxEval(() => { const c = SillyTavern.getContext(); delete c.chatMetadata.aip_memory; c.saveMetadata?.(); });
+        await openSettingsViaMenu();
+        await page.click('.aip-tab[data-tab="match"]');
+        const m0 = countKind('memory'), mark = await toastMark();
+        addRule({ kind: 'memory', delayMs: 7000 });
+        await page.click('#aip_memUpdate');
+        await waitFor(() => countKind('memory') > m0 && mockCtl.inflight > 0, 15000, 100, 'задержанный запрос записей у мока');
+        const busyText = await ctxEval(() => document.getElementById('aip_memState').textContent);
+        await closeModalUi();
+        const edited = await editMessage(1, ' (правка E2E во время запроса записей)');
+        await waitFor(() => mockCtl.inflight === 0, 20000, 200, 'мок ответил на запрос записей');
+        await sleep(2000);
+        const stale = await ctxEval(() => SillyTavern.getContext().chatMetadata.aip_memory ?? null);
+        const toasts = (await toastsFrom(mark)).map(t => t.text);
+        // контроль: без правки записи обновляются
+        await openSettingsViaMenu();
+        await page.click('.aip-tab[data-tab="match"]');
+        const m1 = countKind('memory');
+        await page.click('#aip_memUpdate');
+        await waitFor(() => ctxEval(() => !!SillyTavern.getContext().chatMetadata.aip_memory?.text), 20000, 200, 'записи обновлены (контроль)');
+        const fresh = await ctxEval(() => SillyTavern.getContext().chatMetadata.aip_memory);
+        const memUi = await ctxEval(() => document.getElementById('aip_memText').value);
+        await closeModalUi();
+        evidence.memoryStale = { busyText, edited, stale, toasts, control: { upTo: fresh?.upTo, text: fresh?.text, rev: fresh?.rev } };
+        check(edited.ok, `правка не удалась: ${edited.why}`);
+        check(/Обновляю записи/.test(busyText), `во время запроса: ${busyText}`);
+        check(!stale, `устаревшие записи сохранены: ${JSON.stringify(stale)}`);
+        check(toasts.some(t => /Записи не обновлены: пока шёл запрос, изменились сообщения/.test(t)), `нет пояснения: ${toasts}`);
+        check(countKind('memory') === m1 + 1 && fresh?.text === MEMORY_TEXT && memUi === MEMORY_TEXT, `контроль без правки: ${JSON.stringify(evidence.memoryStale.control)}`);
+        return { discarded: true, toast: toasts.find(t => /Записи не обновлены/.test(t)), control: `записи до #${fresh.upTo}` };
+    });
+
+    // ---------- П.3: переполнение запроса записей ----------
+    await step('P3. Записи: «Контекст модели» 4000 + длинные записи → запрос не отправлен, тост «не помещается»', async () => {
+        vaultGuard();
+        const LONG = 'Важная запись о событиях в лесу и о людях вокруг. '.repeat(400);
+        await openConn(profile1Id);
+        const setCtx = v => ctxEval(v => { const i = document.getElementById('aip_p_contextSize'); i.value = v; i.dispatchEvent(new Event('input', { bubbles: true })); }, v);
+        await setCtx('4000');
+        await page.click('.aip-tab[data-tab="match"]');
+        await page.click('#aip_memClear');
+        await sleep(300);
+        await ctxEval(t => { const ta = document.getElementById('aip_memText'); ta.value = t; ta.dispatchEvent(new Event('input', { bubbles: true })); }, LONG);
+        await sleep(1200);
+        const m0 = countKind('memory'), r0 = stReqs.length, mark = await toastMark();
+        await page.click('#aip_memUpdate');
+        await sleep(3000);
+        const toasts = await toastsFrom(mark);
+        const sent = countKind('memory') - m0;
+        const pluginGen = stReqs.slice(r0).filter(r => /generate$/.test(r.url)).length;
+        const memAfter = await ctxEval(() => SillyTavern.getContext().chatMetadata.aip_memory?.text ?? null);
+        const ctxSize = (await aipProfile()).contextSize;
+        // вернуть как было
+        await page.click('#aip_memClear');
+        await page.click('.aip-tab[data-tab="conn"]');
+        await setCtx('32000');
+        await sleep(500);
+        await closeModalUi();
+        const warn = toasts.find(t => /не помещается в контекст модели/.test(t.text));
+        evidence.memoryOverflow = { ctxSize, sent, pluginGen, toasts: toasts.map(t => t.text), kept: memAfter === LONG };
+        check(String(ctxSize) === '4000', `контекст профиля: ${ctxSize}`);
+        check(sent === 0 && pluginGen === 0, `запрос всё же ушёл: к моку ${sent}, браузер→сервер ${pluginGen}`);
+        check(warn && /warning/.test(warn.cls), `нет предупреждения: ${JSON.stringify(evidence.memoryOverflow.toasts)}`);
+        check(memAfter === LONG, 'записи изменились');
+        return { toast: warn.text.slice(0, 200) };
+    });
+
+    // ---------- П.4: впечатления — свайп во время ожидания ----------
+    await step('P4a. Впечатление задержано, ответ бота свайпнули на другую версию → устаревшее впечатление отброшено, к другой версии не привязано', async () => {
+        vaultGuard();
+        await ensureThoughtsOpen();
+        await playAndWait('ход для сценария свайпа');
+        const v0 = await lastBotState();
+        check(v0.entries.length === 1 && v0.swipes === 1, `исходное состояние: ${JSON.stringify(v0)}`);
+        addRule({ kind: 'thought', delayMs: 15000 });
+        const th0 = countKind('thought');
+        await ctxEval(() => $('#chat .last_mes .swipe_right').trigger('click'));
+        await waitFor(() => countKind('thought') > th0 && mockCtl.inflight > 0, 40000, 200, 'задержанный запрос впечатления о новой версии');
+        const v1 = await lastBotState();
+        const pending = readMock().filter(r => r.kind === 'thought').at(-1);
+        // ST игнорирует свайп, пока не закончилась анимация/обработка предыдущего, — повторяем как пользователь
+        let swipedBackWhilePending = false, attempts = 0;
+        const cl0 = consoleLog.length;
+        for (; attempts < 12; attempts++) {
+            await waitFor(isIdle, 10000, 200, 'таверна свободна').catch(() => null);
+            await ctxEval(() => $('#chat .last_mes .swipe_left').trigger('click'));
+            await sleep(800);
+            if ((await lastBotState()).swipeId === 0) { swipedBackWhilePending = mockCtl.inflight > 0; break; }
+        }
+        if ((await lastBotState()).swipeId !== 0) {
+            const swipeLog = consoleLog.slice(cl0).map(m => m.text).filter(t => /swipe|свайп/i.test(t)).slice(0, 10);
+            const dom = await ctxEval(() => ({ left: $('#chat .last_mes .swipe_left').length, generating: getComputedStyle(document.getElementById('mes_stop')).display, swiping: document.body.dataset.swiping ?? null }));
+            return { ok: false, details: { why: 'свайп назад не сработал', attempts, swipeLog, dom, v1 } };
+        }
+        check(swipedBackWhilePending, 'свайп назад случился уже после ответа на запрос впечатления — сценарий не воспроизведён');
+        await waitFor(() => mockCtl.inflight === 0, 30000, 200, 'мок ответил на задержанный запрос');
+        await sleep(2500);
+        const v2 = await lastBotState();
+        const b = await bindingReport();
+        const fail = await thoughtFailState();
+        evidence.swipeDuringThought = { v0, v1, v2, pendingAbout: pending?.aboutNo, binding: b.problems, fail };
+        check(v1.swipeId === 1 && v1.swipes === 2 && v1.no !== v0.no, `новая версия не появилась: ${JSON.stringify(v1)}`);
+        check(pending?.aboutNo === v1.no, `задержанный запрос не о новой версии: о №${pending?.aboutNo}, версия №${v1.no}`);
+        check(v2.swipeId === 0 && v2.no === v0.no, `не вернулись на версию 0: ${JSON.stringify(v2)}`);
+        check(v2.entries.length === 1 && v2.entries[0].swipeId === 0 && v2.entries[0].no === v0.no, `впечатления о сообщении: ${JSON.stringify(v2.entries)}`);
+        check(v2.log === v0.log, `журнал ${v0.log}→${v2.log}`);
+        check(!b.problems.length, `привязка: ${b.problems}`);
+        check(!fail.failed, 'отброшенное впечатление показано как сбой');
+        return { pendingAbout: `ответ №${pending.aboutNo} (свайп 1)`, shownVersion: `ответ №${v2.no} (свайп 0)`, entries: v2.entries };
+    });
+
+    await step('P4b. Пустой ответ на запрос впечатления → полоса «Повторить»; повтор даёт впечатление без нового хода и сообщения в чате', async () => {
+        vaultGuard();
+        await ensureThoughtsOpen();
+        addRule({ kind: 'thought', empty: true });
+        const before = await chatSnap(), mark = await toastMark();
+        await page.click('#aip_play');
+        await waitFor(async () => { const s = await chatSnap(); return s.len >= before.len + 2 && !s.busy && !s.aipBusy && (await thoughtFailState()).failed; }, 60000, 300, 'полоса ошибки впечатления');
+        await sleep(600);
+        const fail = await thoughtFailState();
+        try { await (await page.$('#aip_thoughts')).screenshot({ path: path.join(SCREENS, 'thoughts-failed-retry.png') }); } catch { /* */ }
+        const toasts = await toastsFrom(mark);
+        const k0 = { turn: countKind('turn'), bot: countKind('bot'), thought: countKind('thought') };
+        const s0 = await lastBotState(), len0 = await chatLen();
+        await page.click('#aip_thoughts [data-act="retry"]');
+        await waitFor(async () => { const s = await lastBotState(); return s.log > s0.log && !(await thoughtFailState()).failed; }, 30000, 300, 'впечатление после «Повторить»');
+        await sleep(800);
+        const s1 = await lastBotState(), len1 = await chatLen();
+        const d = { turn: countKind('turn') - k0.turn, bot: countKind('bot') - k0.bot, thought: countKind('thought') - k0.thought };
+        const b = await bindingReport();
+        evidence.thoughtRetry = { fail, toasts: toasts.map(t => t.text), delta: d, s0, s1, binding: b.problems };
+        check(fail.failed && fail.visible, `полоса не видна: ${JSON.stringify(fail)}`);
+        check(/Впечатление: модель вернула пустой ответ/.test(fail.text) && fail.retry === 'Повторить', `текст полосы: ${fail.text}`);
+        check(toasts.some(t => /Впечатление: модель вернула пустой ответ/.test(t.text)), `нет тоста: ${evidence.thoughtRetry.toasts}`);
+        check(s0.entries.length === 0, 'впечатление записано несмотря на пустой ответ');
+        check(d.turn === 0 && d.bot === 0 && d.thought === 1, `запросы при повторе: ${JSON.stringify(d)}`);
+        check(len1 === len0, `в чате ${len0}→${len1} сообщений`);
+        check(s1.entries.length === 1 && s1.entries[0].sameDate && s1.entries[0].no === s1.no, `впечатление после повтора: ${JSON.stringify(s1.entries)}`);
+        check(!b.problems.length, `привязка: ${b.problems}`);
+        return { strip: fail.text, retryRequests: d };
+    });
+
+    // ---------- П.1: переключение/удаление ключей и профилей ----------
+    await step('P1-7. Переключение ключа, удаление ключа, создание и удаление профиля с ключом — secrets.json не меняется', async () => {
+        vaultGuard();
+        const sec0 = secretsNorm(), r0 = stReqs.length;
+        const keys0 = readKeys();
+        const kMig = keys0.find(k => k.value === KEY2), kV = keys0.find(k => k.value === KEY_V);
+        check(kMig && kV, `ключи в хранилище: ${JSON.stringify(keysView())}`);
+        await openConn(profile1Id);
+        await selectKey(kMig.id); await sleep(500);
+        const pA = await aipProfile();
+        await selectKey(kV.id); await sleep(500);
+        const pB = await aipProfile();
+        const nProf0 = (await ctxEval(() => SillyTavern.getContext().extensionSettings.ai_player.profiles.length));
+        await page.click('#aip_profNew'); await sleep(600);
+        await addKeyViaUi('E2E временный', KEY_TMP);
+        const kT = readKeys().find(k => k.value === KEY_TMP);
+        await page.click('#aip_profDel');
+        await waitFor(() => !readKeys().some(k => k.value === KEY_TMP), 10000, 200, 'ключ удалённого профиля удалён');
+        await sleep(500);
+        await openConn(profile1Id);
+        await selectKey(kMig.id); await sleep(500);
+        await page.click('#aip_keyDel');
+        await waitFor(() => !readKeys().some(k => k.id === kMig.id), 10000, 200, 'перенесённый ключ удалён');
+        await sleep(800);
+        await selectKey(kV.id); await sleep(500);
+        const p1 = await aipProfile();
+        const nProf1 = (await ctxEval(() => SillyTavern.getContext().extensionSettings.ai_player.profiles.length));
+        await closeModalUi();
+        await sleep(2000);
+        evidence.keySwitch = { keys: keysView(), secretsCalls: secretsChanges(r0) };
+        check(pA.keyId === kMig.id && pB.keyId === kV.id, 'переключение ключа не сработало');
+        check(kT, 'ключ временного профиля не сохранился');
+        check(nProf1 === nProf0, `профилей ${nProf0}→${nProf1}`);
+        check(p1.keyId === kV.id, 'профиль 1 не на ключе плагина');
+        check(secretsNorm() === sec0 && !secretsChanges(r0).length, `secrets.json изменился: ${secretsChanges(r0)}`);
+        return { keysLeft: readKeys().map(k => k.label), secretsUnchanged: true };
+    });
+
+    await step('P1-8. У основного подключения нет ключа: ход идёт, расширение не создаёт заглушку и не отдаёт свой ключ таверне', async () => {
+        vaultGuard();
+        // пользователь удалил все ключи Custom в менеджере ключей ST
+        for (const x of customSlots()) await stApi('/api/secrets/delete', { key: 'api_key_custom', id: x.id });
+        check(customSlots().length === 0, `ключи таверны не удалены: ${JSON.stringify(customSlots().map(slotView))}`);
+        const sec0 = secretsNorm(), r0 = stReqs.length;
+        const r = await playViaPlugin(KEY_V, null, 'ход без ключа таверны');
+        // добавление ещё одного ключа расширения при пустом менеджере таверны
+        await openConn(profile1Id);
+        await addKeyViaUi('E2E временный 2', KEY_TMP);
+        const kT = readKeys().find(k => k.value === KEY_TMP);
+        await selectKey(readKeys().find(k => k.value === KEY_V).id); await sleep(500);
+        await closeModalUi();
+        await sleep(1500);
+        evidence.noTavernKey = { requests: r.requests, secrets: customSlots().map(slotView), secretsCalls: secretsChanges(r0) };
+        if (secretsNorm() !== sec0) r.problems.push(`secrets.json изменился: ${JSON.stringify(customSlots().map(slotView))}`);
+        if (customSlots().some(x => PLACEHOLDER_RE.test(x.label || ''))) r.problems.push('создана заглушка');
+        if (!kT) r.problems.push('ключ не добавлен в хранилище плагина');
+        if (r.problems.length) return { ok: false, details: r.problems };
+        return { requests: r.requests, tavernKeys: 0 };
+    });
+
+    await step('P1-9. Ошибки через плагин: mock 500 и 401 → тост «Ход: …» с видом ошибки и HTTP-кодом, без значения ключа', async () => {
+        vaultGuard();
+        const cases = [
+            { status: 500, re: /Ход: ошибка на стороне провайдера или прокси \(HTTP 500\)/ },
+            { status: 401, re: /Ход: ключ или пароль отклонён \(ошибка авторизации\) \(HTTP 401\)/ },
+        ];
+        const out = [];
+        for (const cs of cases) {
+            addRule({ kind: 'turn', status: cs.status });
+            const len0 = await chatLen(), t0 = countKind('turn'), mark = await toastMark(), c0 = consoleLog.length;
+            await page.click('#aip_play');
+            await waitFor(async () => (await toastsFrom(mark)).some(t => /toast-error/.test(t.cls)) && await isIdle(), 30000, 200, `тост ошибки ${cs.status}`);
+            await sleep(800);
+            const toasts = await toastsFrom(mark);
+            const err = toasts.find(t => /toast-error/.test(t.cls));
+            const cons = consoleLog.slice(c0).map(m => m.text).join('\n');
+            out.push({ status: cs.status, toast: err.text, turnRequests: countKind('turn') - t0, chat: (await chatLen()) - len0,
+                leak: ALL_SECRETS.some(s => err.text.includes(s) || cons.includes(s)) || /sk-e2e-[A-Za-z]/.test(err.text), match: cs.re.test(err.text) });
+        }
+        clearRules();
+        evidence.errors = out;
+        const bad = out.filter(o => !o.match || o.leak || o.turnRequests !== 1 || o.chat !== 0);
+        if (bad.length) return { ok: false, details: bad };
+        return out.map(o => o.toast);
+    });
+
+    let claudeProfileId = null;
+    await step('P1-10. Claude-прокси с плагином: перенос пароля в хранилище, ▶ с x-api-key = пароль, пароля больше нет в settings.json', async () => {
+        vaultGuard();
+        const sec0 = secretsNorm();
+        claudeProfileId = (await ctxEval(() => SillyTavern.getContext().extensionSettings.ai_player.profiles)).find(p => p.provider === 'claude_proxy')?.id;
+        check(claudeProfileId, 'нет профиля Claude-прокси');
+        await openConn(claudeProfileId);
+        await waitFor(() => ctxEval(() => !document.getElementById('aip_keyMigrate').classList.contains('aip-hidden')), 10000, 200, 'кнопка переноса пароля');
+        const layout = await ctxEval(() => ({ keyLabel: document.getElementById('aip_keyLabelText').textContent, proxyWrap: getComputedStyle(document.getElementById('aip_proxyWrap')).display }));
+        await page.click('#aip_keyMigrate');
+        await waitFor(async () => !!(await aipProfile()).keyId, 10000, 200, 'keyId у профиля Claude');
+        await sleep(2500);
+        const p = await aipProfile();
+        const kv = readKeys().find(k => k.id === p.keyId);
+        await closeModalUi();
+        const n0 = readMock().length;
+        await playAndWait('ход Claude через плагин');
+        const fresh = readMock().slice(n0).filter(r => r.api === 'anthropic');
+        await openConn(profile1Id);
+        await closeModalUi();
+        await sleep(2000);
+        evidence.claudeVault = { layout, key: kv && { provider: kv.provider, base: kv.base, value: mask(kv.value) }, requests: fresh.map(r => `${r.kind} x-api-key=${mask(r.headers['x-api-key'])}`) };
+        check(layout.keyLabel === 'Пароль прокси' && layout.proxyWrap === 'none', `вид полей: ${JSON.stringify(layout)}`);
+        check(kv && kv.provider === 'claude_proxy' && kv.value === PROXY_PASS && kv.base === MOCK_URL, `keys.json: ${JSON.stringify(keysView())}`);
+        check(!p.proxyPassword, 'пароль остался в профиле');
+        check(fresh.some(r => r.kind === 'turn') && fresh.every(r => r.headers['x-api-key'] === PROXY_PASS && r.url === '/v1/messages'), `запросы: ${evidence.claudeVault.requests}`);
+        check(!settingsRaw().includes(PROXY_PASS), 'пароль прокси остался в settings.json');
+        check(secretsNorm() === sec0, 'secrets.json изменился');
+        return evidence.claudeVault.requests;
+    });
+
+    await step('P1-11. Перезапуск ST: ключи плагина на месте, профиль видит свой ключ, «Тест» ✔ с ключом расширения', async () => {
+        vaultGuard();
+        const keys0 = JSON.stringify(keysView()), sec0 = secretsNorm();
+        await stopST();
+        await startST();
+        await loadST();
+        await openSeraphina();
+        await openConn(profile1Id);
+        await waitFor(() => ctxEval(() => document.getElementById('aip_keyState').dataset.state === 'ok'), 10000, 200, 'ключ профиля после перезапуска');
+        const options = await keyOptions(), m = await storeMode();
+        const n0 = readMock().length;
+        await ctxEval(() => { document.getElementById('aip_status').textContent = ''; });
+        await page.click('#aip_test');
+        await waitFor(() => ctxEval(() => /^[✔✖]/.test(document.getElementById('aip_status').textContent)), 20000, 200, 'результат «Тест»');
+        const status = await ctxEval(() => document.getElementById('aip_status').textContent);
+        const test = readMock().slice(n0).find(r => r.kind === 'test');
+        await closeModalUi();
+        evidence.restart = { options, mode: m.mode, status, testAuth: mask(test?.headers.authorization) };
+        check(JSON.stringify(keysView()) === keys0, 'keys.json изменился после перезапуска');
+        check(secretsNorm() === sec0, 'secrets.json изменился после перезапуска');
+        check(m.mode === 'vault', `режим: ${m.mode}`);
+        check(options.some(o => o.includes(KEY_V_LABEL)), `ключа нет в списке: ${options}`);
+        check(status.startsWith('✔') && test?.headers.authorization === `Bearer ${KEY_V}`, `«Тест»: ${status}, ${mask(test?.headers.authorization)}`);
+        return { options, status };
+    });
+
+    await step('P1-12. Ни один ответ плагина браузеру не содержит значений ключей и паролей', async () => {
+        vaultGuard();
+        const leaks = pluginResps.filter(r => ALL_SECRETS.some(s => r.text.includes(s)));
+        evidence.pluginResponses = { total: pluginResps.length, byRoute: pluginResps.reduce((a, r) => { const k = r.url.replace(/^.*ai-player/, ''); a[k] = (a[k] || 0) + 1; return a; }, {}) };
+        check(pluginResps.length > 5, 'ответов плагина почти нет');
+        check(!leaks.length, `утечка в ответах: ${leaks.map(r => r.url)}`);
+        return evidence.pluginResponses;
+    });
+
+    // ---------- П.1: два пользователя ST (без браузера, через HTTP API) ----------
+    async function stSession() {
+        const jar = new Map();
+        const cookie = () => [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
+        const take = r => { for (const c of r.headers.getSetCookie?.() || []) { const kv = c.split(';')[0]; const i = kv.indexOf('='); jar.set(kv.slice(0, i).trim(), kv.slice(i + 1)); } };
+        const r0 = await fetch(BASE + 'csrf-token', { headers: { cookie: cookie() } });
+        take(r0);
+        const token = (await r0.json()).token;
+        const post = async (u, body) => {
+            const r = await fetch(BASE + u.replace(/^\//, ''), { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token, cookie: cookie() }, body: JSON.stringify(body ?? {}) });
+            take(r);
+            const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch { /* */ }
+            return { status: r.status, j, t: t.slice(0, 200) };
+        };
+        return { post };
+    }
+    await step('P1-13. Два пользователя ST (enableUserAccounts): второй не видит ключей первого и не может ими пользоваться', async () => {
+        vaultGuard();
+        await browser.close().catch(() => {}); browser = null;   // дальше — только HTTP
+        await stopST();
+        patchConfig({ enableUserAccounts: true });
+        await startST();
+        const s1 = await stSession();
+        const l1 = await s1.post('/api/users/login', { handle: 'default-user', password: '' });
+        if (l1.status !== 200) return { skip: true, details: `вход default-user не удался (HTTP ${l1.status}: ${l1.t}) — проверено юнит-тестами плагина` };
+        const list1 = await s1.post('/api/plugins/ai-player/keys/list', {});
+        const cr = await s1.post('/api/users/create', { handle: 'e2e-second', name: 'E2E Second', password: '' });
+        if (cr.status !== 200) return { skip: true, details: `второй пользователь не создан (HTTP ${cr.status}: ${cr.t}) — проверено юнит-тестами плагина` };
+        const s2 = await stSession();
+        const l2 = await s2.post('/api/users/login', { handle: 'e2e-second', password: '' });
+        check(l2.status === 200, `вход второго: ${l2.status} ${l2.t}`);
+        const kV = (list1.j?.keys || []).find(k => k.label === KEY_V_LABEL);
+        check(kV, `у первого нет ключа плагина: ${JSON.stringify(list1)}`);
+        const list2 = await s2.post('/api/plugins/ai-player/keys/list', {});
+        const n0 = readMock().length;
+        const gen2 = await s2.post('/api/plugins/ai-player/generate', { keyId: kV.id, provider: 'openai', url: MOCK_URL, model: 'mock-player', system: 'x', messages: [{ role: 'user', content: 'hi' }] });
+        const mockAfterGen = readMock().length - n0;
+        const del2 = await s2.post('/api/plugins/ai-player/keys/delete', { id: kV.id });
+        // общая копия первого пользователя — второй не может её «перенести» к себе
+        const w1 = await s1.post('/api/secrets/write', { key: 'api_key_custom', value: KEY_TMP, label: 'AI Player · проверка изоляции' });
+        const imp2 = await s2.post('/api/plugins/ai-player/keys/import', { secretKey: 'api_key_custom', secretId: w1.j?.id, provider: 'openai', url: MOCK_URL });
+        const add2 = await s2.post('/api/plugins/ai-player/keys/add', { provider: 'openai', url: MOCK_URL, value: KEY_U2, label: 'ключ второго' });
+        const list1b = await s1.post('/api/plugins/ai-player/keys/list', {});
+        const list2b = await s2.post('/api/plugins/ai-player/keys/list', {});
+        const file2 = path.join(TMP, 'e2e-second', 'ai-player', 'keys.json');
+        const raw2 = fs.existsSync(file2) ? fs.readFileSync(file2, 'utf8') : '';
+        evidence.twoUsers = { list1: list1.j?.keys?.map(k => k.label), list2: list2.j, gen2: { status: gen2.status, kind: gen2.j?.error?.kind }, mockAfterGen, del2: { status: del2.status, kind: del2.j?.error?.kind },
+            imp2: { status: imp2.status, kind: imp2.j?.error?.kind }, add2: add2.status, list1b: list1b.j?.keys?.map(k => k.label), list2b: list2b.j?.keys?.map(k => k.label), user2File: fs.existsSync(file2) };
+        check(Array.isArray(list2.j?.keys) && list2.j.keys.length === 0, `второй видит ключи: ${JSON.stringify(list2.j)}`);
+        check(gen2.status === 404 && gen2.j?.error?.kind === 'no_key' && mockAfterGen === 0, `второй воспользовался ключом первого: ${JSON.stringify(evidence.twoUsers.gen2)}, к моку ${mockAfterGen}`);
+        check(del2.status === 404 && list1b.j?.keys?.some(k => k.id === kV.id), 'второй удалил ключ первого');
+        check(w1.j?.id && imp2.status === 404, `импорт чужой общей копии: ${JSON.stringify(evidence.twoUsers.imp2)}`);
+        check(add2.status === 200 && list2b.j?.keys?.length === 1 && !list1b.j.keys.some(k => k.label === 'ключ второго'), 'ключ второго виден первому или не сохранился');
+        check(raw2.includes(KEY_U2) && !raw2.includes(KEY_V) && !fs.readFileSync(KEYS_FILE, 'utf8').includes(KEY_U2), 'хранилища пользователей не разделены на диске');
+        await stopST();
+        return { user1Keys: evidence.twoUsers.list1b, user2Keys: evidence.twoUsers.list2b, foreignGenerate: gen2.status, foreignDelete: del2.status, foreignImport: imp2.status };
+    });
+
     evidence.console = {
         errors: consoleLog.filter(m => m.type === 'error').map(m => m.text),
         warnings: consoleLog.filter(m => m.type === 'warning' && /AI Player/.test(m.text)).map(m => m.text),
@@ -936,14 +1827,19 @@ try {
         pageErrors, dialogs,
     };
 } catch (e) {
-    record('инфраструктура', false, e?.stack || String(e));
+    record('инфраструктура', 'FAIL', e?.stack || String(e));
 } finally {
+    clearRules();
     try { await browser?.close(); } catch { /* */ }
-    st.kill();
+    try { await stopST(); } catch { /* */ }
+    try { st?.kill(); } catch { /* */ }
+    try { uninstallPlugin(); } catch (e) { console.log('не удалось убрать папку плагина:', e.message); }
+    mock.closeAllConnections?.();
     await new Promise(r => mock.close(r));
-    const rep = { when: new Date().toISOString(), failed, results, evidence };
+    const rep = { when: new Date().toISOString(), counts, total: results.length, results, evidence: JSON.parse(maskAll(JSON.stringify(evidence))) };
     fs.writeFileSync(path.join(OUT, 'report.json'), JSON.stringify(rep, null, 2));
-    console.log(`\nИтого: ${results.length - failed}/${results.length} шагов прошли. Отчёт: ${path.join(OUT, 'report.json')}`);
+    console.log(`\nИтого: PASS ${counts.PASS}, FAIL ${counts.FAIL}, KNOWN ${counts.KNOWN}, SKIP ${counts.SKIP} (всего ${results.length}). Пройдено: ${counts.PASS}/${results.length}. Отчёт: ${path.join(OUT, 'report.json')}`);
+    console.log(`Папка плагина ${PLUGIN_DST}: ${pluginPreexisted ? (pluginBackup ? 'была до прогона — восстановлена' : 'была до прогона — оставлена') : (fs.existsSync(PLUGIN_DST) ? 'НЕ УДАЛЕНА' : 'создавалась на время прогона — удалена')}`);
     await sleep(500);
-    process.exit(failed ? 1 : 0);
+    process.exit(counts.FAIL ? 1 : 0);
 }

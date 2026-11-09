@@ -7,13 +7,13 @@
 One model plays your character. Another plays their scene partner.<br>
 Choose the models, shape the style, and watch the story unfold.
 
-![Version 0.5.0](https://img.shields.io/badge/version-0.5.0-e99a25?style=flat-square)
+![Version 0.5.1](https://img.shields.io/badge/version-0.5.1-e99a25?style=flat-square)
 ![SillyTavern extension](https://img.shields.io/badge/SillyTavern-extension-555?style=flat-square)
 [![MIT license](https://img.shields.io/badge/license-MIT-75b798?style=flat-square)](LICENSE)
 
 **English** · [Русский](README.ru.md)
 
-[Install](#installation) · [First turn](#your-first-turn) · [Features](#features) · [FAQ](#faq)
+[Install](#installation) · [Key plugin](#server-key-plugin-recommended) · [First turn](#your-first-turn) · [Features](#features) · [Limitations](#known-limitations) · [FAQ](#faq)
 
 </div>
 
@@ -68,12 +68,45 @@ Copy the extension folder into `SillyTavern/data/default-user/extensions/` and r
 
 </details>
 
-**Compatibility:** requires a SillyTavern version with `SillyTavern.getContext()`. The project targets **1.19.0**; compatibility with other versions may vary.
+**Compatibility:** requires a SillyTavern version with `SillyTavern.getContext()` and ES-module extensions. Tested on **1.19.0**; compatibility with other versions may vary. The server plugin needs Node.js 18 or newer, as SillyTavern itself does.
+
+### Server key plugin (recommended)
+
+The extension you install with **Install extension** runs only in the browser and cannot create its own key storage on the server. Without the plugin, AI Player keys live in SillyTavern's shared `secrets.json` and **appear in the main connection's key manager**. The plugin keeps keys and Claude proxy passwords in the ST user's data folder, `data/<user>/ai-player/keys.json`, and sends model requests itself. Extension keys never show up in Tavern's key manager and are never sent to the browser.
+
+SillyTavern intentionally does not install server plugins together with extensions, because a plugin runs code on the server. Install the plugin once, manually:
+
+1. Copy the extension's `server-plugin` folder to `SillyTavern/plugins/ai-player`.
+2. Set `enableServerPlugins: true` in SillyTavern's `config.yaml`.
+3. Restart SillyTavern.
+
+<details>
+<summary>Commands for desktop and Termux</summary>
+
+If the extension is installed for `default-user`, run these from the SillyTavern root folder:
+
+```sh
+# Linux, macOS, Termux
+mkdir -p plugins
+cp -r data/default-user/extensions/SillyTavern-AI-Player/server-plugin plugins/ai-player
+```
+
+```powershell
+# Windows (PowerShell)
+New-Item -ItemType Directory -Force plugins | Out-Null
+Copy-Item -Recurse data\default-user\extensions\SillyTavern-AI-Player\server-plugin plugins\ai-player
+```
+
+An extension installed for all users lives in `public/scripts/extensions/third-party/SillyTavern-AI-Player`. After updating the extension, copy the plugin folder again and restart ST.
+
+</details>
+
+The **Connection** tab shows whether the plugin is active: "🔒 AI Player plugin … is installed", or "⚠ The AI Player plugin is not installed" with the same commands. You can install the plugin later; the extension works without it in shared mode.
 
 ## Your first turn
 
 1. Open a character or group chat and select your persona.
-2. In AI Player settings, choose the connection type, enter the API URL if needed, and save a key or proxy password.
+2. In AI Player settings, choose the connection type, enter the API URL if needed, and save a key or proxy password. Each profile needs a key **of its own**: AI Player never uses Tavern's main connection key.
 3. Choose a model or enter its ID. Click **Test**.
 4. Press **▶** near the input field to generate a turn for your persona.
 5. With auto-send enabled, the turn is sent to chat. If Tavern's main API is connected, the bot replies as usual.
@@ -135,7 +168,14 @@ Memory is enabled by default. Every **3 agent turns**, a separate request update
 
 Each chat has its own notes. Edit them, update them manually, or disable memory. The prompt asks the model to distinguish suspicions from facts, but important details still need checking.
 
-Deleting a reference message may mark notes as stale. Review notes after editing history: automatic checks do not detect every content change.
+**Notes never rest on changed history.** The extension keeps a fingerprint of the messages the notes were built from: their text, selected swipe, date, and order.
+
+- If a covered message is edited, deleted, or switched to another swipe, the notes are marked **Needs review**. The mark clears once you edit the notes yourself, or clear and update them.
+- If history changes while an update request is running, the result is discarded and the previous notes stay as they were.
+- A manual edit or clear made during the request takes priority over the model's result.
+- New messages added after the covered range do not invalidate the result; they are included in the next update.
+
+**Request budget.** The update request is sized from the provider's reply limit (2500 tokens for Claude, 1000 for OpenAI-compatible), the system prompt with its language rule, the previous notes, and framing text. Previous notes are never trimmed. If new messages do not fit, the oldest of them are skipped and you are told so. If even the minimal request (one message, or the previous notes alone) does not fit, nothing is sent and the reason is shown.
 
 </details>
 
@@ -151,17 +191,43 @@ History trimming uses an approximate token estimate. The meter also uses ST's to
 <details>
 <summary><b>Keys and proxy passwords</b></summary>
 
-API keys are saved through SillyTavern's key storage, in `secrets.json` on the server running Tavern. They are not saved in extension settings. Under standard ST settings, the browser receives masked values; this depends on `allowKeysExposure` in `config.yaml`.
+In every mode, AI Player never uses Tavern's main connection key. A profile without its own key sends no requests and asks you to add one. Keys are never written to extension settings or exports.
 
-Extension keys are labeled **AI Player**. This is shared ST storage, so those keys also appear in Tavern's main key manager; the extension profile selects its key separately. After adding a key, the extension attempts to restore Tavern's previous active key. If there was no main key, it creates an empty placeholder. Keep it until you add a main Tavern key. Check Tavern's main connection after key changes, especially after a server error.
+**With the server plugin** (recommended):
 
-**Claude proxy passwords are different:** they are saved in extension settings inside `settings.json` and loaded into the browser with those settings. Do not publish that file or backups containing passwords.
+- Keys and Claude proxy passwords are stored in `data/<user>/ai-player/keys.json` on the server, separately for each ST user.
+- Adding, selecting, or deleting a key or profile never changes Tavern's key list or its active main key.
+- The plugin sends model requests. The browser passes only a key ID; the key value never reaches the browser.
+- Each key is bound to the API type and address it was saved with. If you change a profile's address, the plugin will not send the old key there; add a key for the new address.
 
-Model requests go through the SillyTavern server.
+**Without the plugin** (shared mode, marked "⚠ The AI Player plugin is not installed"):
+
+- Keys are saved in SillyTavern's shared `secrets.json` with the **AI Player** label, so they appear in the main connection's key manager. Under standard ST settings the browser receives masked values; this depends on `allowKeysExposure` in `config.yaml`.
+- SillyTavern makes every new key active for the whole Tavern, so the extension immediately restores Tavern's previous active key. If Tavern had no key of its own, an empty "AI Player placeholder" is set instead; keep it until you add a main Tavern key.
+- The Claude proxy password is stored in extension settings (`settings.json` on the server) and loaded into the browser with them. Do not publish that file or data backups.
+- Requests go through the SillyTavern backend.
+
+**Moving to the plugin.** After the plugin is installed, profiles with old keys keep working. A **Move to AI Player storage** button appears next to the key: the plugin copies the key from `secrets.json` on the server, and it never reaches the browser. Proxy passwords move from settings into plugin storage the same way. Old shared copies are not deleted automatically, because something else may still use them. Once all profiles are moved, click **Delete old shared copies**. The extension lists them and asks for confirmation. It removes only copies that are not active in the main connection and not selected by any profile that was not moved. Tavern's main connection does not change.
 
 </details>
 
+## Known limitations
+
+- **The key plugin is installed manually.** SillyTavern does not install server plugins from extensions. Without the plugin, AI Player keys are visible in Tavern's key manager.
+- **Errors in ST's main connection**, such as an HTTP 502 from the bot's model, are not interpreted by the extension, because SillyTavern provides no reliable generation-error event. Tavern reports those itself. AI Player reports errors from its own requests: turns, impressions, notes, tests, and model lists.
+- **Paid requests are never retried automatically.** When an impression or notes update fails, the turn that was already sent is not repeated. Retry the failed step yourself with **Retry** in the impressions window, by clicking the notification, or with **Update now** for notes.
+- **Token counts are approximate.** Context trimming and the notes budget use an estimate, and the meter uses ST's tokenizer. Both can differ from the provider's count.
+- **Impressions, notes, and play style depend on the model.** The extension sets instructions but cannot guarantee the result.
+
 ## FAQ
+
+**What does an error like "Turn: the key or password was rejected (authorization error) (HTTP 401)" mean?**
+
+It starts with the stage: turn, impressions, notes, test, model list, or keys. Next comes the kind of failure: authorization, rate limit, insufficient funds, timeout, no connection, provider or proxy error, or empty response. Then the HTTP code when there is one, and a short provider explanation. Keys, passwords, and addresses containing credentials are removed from the text.
+
+**A profile used to work and now asks for a key. Why?**
+
+Since 0.5.1, AI Player no longer falls back to Tavern's main connection key. Add a key to the profile on the **Connection** tab.
 
 **Are impressions the same as character thoughts?**
 
@@ -177,7 +243,7 @@ Check auto-send, the main API connection, and ST's generation status. If Tavern 
 
 **Are new impressions generated after regeneration?**
 
-Yes, when impressions are enabled and the new reply follows an agent turn. Continue and service messages do not trigger a new impressions request.
+Yes, when impressions are enabled and the new reply follows an agent turn. Continue and service messages do not trigger a new impressions request. If the bot's reply is regenerated, swiped, edited, or deleted while an impressions request is running, that result is discarded, so it is never attached to the wrong version of the reply.
 
 **Are the word limit, language choice, prose style, and memory accuracy guaranteed?**
 
@@ -185,9 +251,23 @@ No. They are prompt instructions; results depend on the model, settings, and con
 
 ## Development and tests
 
-No build step is required: `index.js` contains the logic and interface, `style.css` the styles, and `manifest.json` the extension metadata. `prompts/` contains English prompt references and style variants.
+No build step is required. SillyTavern loads `index.js` as an ES module, and it imports the modules in `src/`:
 
-**Unit tests:** 73 checks using jsdom and a simulated SillyTavern API, including localization, English request scaffolding, and migration of built-in prompts:
+| Module | Purpose |
+| --- | --- |
+| `src/i18n-en.js`, `src/i18n.js` | English UI dictionary, locale selection, language-of-play rule |
+| `src/core.js` | Version, settings, profiles, ST context access |
+| `src/keys.js` | Key storage: plugin or shared `secrets.json`, migration and cleanup |
+| `src/api.js`, `src/errors.js` | Model requests, error kinds, secret redaction |
+| `src/prompts-en.js`, `src/prompts.js`, `src/migrations.js` | Built-in prompts, placeholder rendering, upgrades of old built-in texts |
+| `src/context.js` | Turn history, context budget, meter |
+| `src/memory.js`, `src/reactions.js`, `src/turn.js` | Player notes, impressions, agent turn |
+| `src/ui-modal.js`, `src/ui-thoughts.js`, `src/export.js`, `src/diagnostics.js` | Windows, export, diagnostics |
+| `server-plugin/index.mjs` | Server key plugin |
+
+`src/prompts-en.js` is the single source of built-in prompts. The reference copies in `prompts/` are generated by `node tests/unit/sync-prompts.mjs`, and a test checks that they still match the source. Interface strings go through `ui()`. A test finds every such string in the code and checks that each one has a translation with matching `${n}` placeholders.
+
+**Unit tests:** jsdom with a simulated SillyTavern API and plugin, loading of the real ES modules, the plugin itself in Node (user isolation, address binding, errors), and failure scenarios for notes, impressions, and keys:
 
 ```sh
 cd tests/unit
@@ -203,7 +283,7 @@ npm install
 node run-e2e.mjs
 ```
 
-The scenario uses a separate data folder and ports **8123/8124**. It looks for ST at `C:\Projects\SillyTavern` by default. Set `ST_DIR` for another path and `BROWSER` for the browser executable. See the [test scenario](tests/e2e/run-e2e.mjs).
+The scenario uses a separate data folder and ports **8123/8124**. It looks for ST at `C:\Projects\SillyTavern` by default. Set `ST_DIR` for another path and `BROWSER` for the browser executable. Results are counted separately as **PASS**, **FAIL**, **KNOWN** (a confirmed known issue, not counted as passed), and **SKIP** (not run, with a reason). See the [test scenario](tests/e2e/run-e2e.mjs). All checks use made-up keys and a mock API.
 
 Found a problem? [Open an issue](https://github.com/Sumo1433/SillyTavern-AI-Player/issues) with your ST version, connection type, steps to reproduce, and error message. Remove keys and passwords from attachments.
 
