@@ -1,26 +1,30 @@
-// Тестовый стенд: загружает index.js расширения в jsdom с моками SillyTavern.
-// index.js не меняется — исходник подключается как обычный <script>, после него
-// добавляется маленький «хвост», открывающий внутренние функции через window.__aip.
+// Тестовый стенд: загружает расширение в jsdom с моками SillyTavern.
+// Модули расширения (index.js + src/*.js) склеиваются без import/export (sources.mjs) и
+// подключаются как обычный <script>; после них добавляется «хвост», открывающий внутренние
+// функции через window.__aip. Сами исходники не меняются.
 //
 // Моки повторяют поведение SillyTavern 1.19 (исходники: C:\Projects\SillyTavern):
 //  - src/endpoints/secrets.js — /api/secrets/{read,write,rotate,delete}
 //  - src/endpoints/backends/chat-completions.js — /generate (ключи, ответ Claude)
 //  - public/script.js — saveReply / deleteLastMessage / sendMessageAsUser (send_date, gen_finished,
 //    swipe_info, MESSAGE_RECEIVED (id, type))
+//  - плагин ключей AI Player (server-plugin/index.mjs) — /api/plugins/ai-player/* (опция plugin)
 import { JSDOM, VirtualConsole } from 'jsdom';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
+import { bundleForTests } from './sources.mjs';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-export const SRC = readFileSync(path.resolve(here, '../../index.js'), 'utf8');
+export const SRC = bundleForTests();
 
 const EXPOSE = `
 ;window.__aip = {
   get busy() { return busy; },
   get pendingMeta() { return pendingMeta; },
+  get memBusy() { return memBusy; },
+  get reactionFailure() { return reactionFailure; },
+  vault,
   cleanReply, buildMessages, buildSystemPrompt, getSync, settings, activeProfile,
   updateCtxMeter, playTurn, openModal, renderPrompt, matchData, setReactions, renderThoughts,
+  memoryState, updateMemory, historyHash, describeError, redact, estTokens, probeVault,
+  migrateProfileKey, cleanLegacyCopies, retryReaction, profileHasKey,
   PROMPT_DEFAULTS, PLACEHOLDER_LABEL,
 };`;
 
@@ -90,9 +94,15 @@ export const defaultSecrets = () => ({
 
 export const REACTION_TEXT = 'Реакция: живой ответ\nНравится / не нравится: атмосфера\nПартнёр: оценка 7/10 — держит роль\nДальше: заказать эль';
 
-export const isGenerate = c => c.url.endsWith('/api/backends/chat-completions/generate');
+// запрос к модели — через бэкенд ST (общий режим) или через плагин ключей AI Player
+export const isBackendGenerate = c => c.url.endsWith('/api/backends/chat-completions/generate');
+export const isVaultGenerate = c => c.url.endsWith('/api/plugins/ai-player/generate');
+export const isGenerate = c => isBackendGenerate(c) || isVaultGenerate(c);
+export const isPluginCall = (c, op) => c.url.includes('/api/plugins/ai-player/') && (!op || c.url.endsWith(`/api/plugins/ai-player/${op}`));
+export const isProbe = c => isPluginCall(c, 'probe');
 // тип запроса — по содержимому, а не по лимиту токенов (лимиты зависят от провайдера)
-const sysOf = c => String(c.body?.messages?.[0]?.content || '');
+// у плагина system передаётся отдельным полем, у бэкенда ST — первым сообщением
+export const sysOf = c => String(c.body?.system ?? c.body?.messages?.[0]?.content ?? '');
 const lastOf = c => String(c.body?.messages?.at?.(-1)?.content || '');
 export const isTestCall = c => isGenerate(c) && /^(Отвечай одним словом|Reply with one word)/.test(sysOf(c));
 export const isReactionCall = c => isGenerate(c) && !isTestCall(c) && /об игре после ответа «|What is on your mind about the game after/.test(lastOf(c));
@@ -106,6 +116,8 @@ export const isSecretCall = (c, op) => c.url.endsWith(`/api/secrets/${op}`);
  *  - extensionSettings: начальные extensionSettings (по умолчанию — один готовый профиль p1)
  *  - chat, secrets (сырые значения), card, chatId
  *  - turnReply: текст, который «модель» вернёт на ход игрока
+ *  - plugin: true — на сервере установлен плагин ключей AI Player (имитация server-plugin/index.mjs);
+ *    vaultKeys — начальные ключи плагина [{id, label, provider, base, value}]
  */
 export function setup(opts = {}) {
     const logs = [];
@@ -135,9 +147,9 @@ export function setup(opts = {}) {
 
     // ---- toastr / confirm / jQuery ----
     const toasts = [];
-    w.toastr = Object.fromEntries(['info', 'warning', 'error', 'success'].map(k => [k, (m, t) => { toasts.push({ type: k, msg: String(m), title: t }); }]));
+    w.toastr = Object.fromEntries(['info', 'warning', 'error', 'success'].map(k => [k, (m, t, o) => { toasts.push({ type: k, msg: String(m), title: t, opts: o }); }]));
     const confirms = [];
-    const env = { confirmAnswer: true, secretsReadBroken: false };
+    const env = { confirmAnswer: true, secretsReadBroken: false, fail: {}, netFail: [] };
     w.confirm = m => { confirms.push(String(m)); return env.confirmAnswer; };
     w.jQuery = cb => { if (typeof cb === 'function') cb(); };
 
@@ -219,7 +231,58 @@ export function setup(opts = {}) {
         return st;
     };
 
+    // ---- имитация серверного плагина ключей (server-plugin/index.mjs) ----
+    const vault = { keys: structuredClone(opts.vaultKeys ?? []), used: [], n: 0 };
+    const vaultBase = (provider, url) => provider === 'anthropic' ? 'https://api.anthropic.com/v1'
+        : String(url || '').trim().replace(/\/+$/, '').replace(provider === 'claude_proxy' ? /\/messages$/ : /\/chat\/completions$/, '');
+    const vErr = (status, kind, message, upstream = null) => res(status, { error: { kind, status: upstream, message } });
+    const pub = k => ({ id: k.id, label: k.label, provider: k.provider, base: k.base, mask: `…${k.value.slice(-3)}` });
+    const vaultRoute = (op, body) => {
+        switch (op) {
+            case 'probe': return ok({ ok: true, version: 'test' });
+            case 'keys/list': return ok({ keys: vault.keys.filter(k => !body.provider || k.provider === body.provider).map(pub) });
+            case 'keys/add': {
+                if (!body.value?.trim()) return vErr(400, 'bad_request', 'Empty key');
+                const k = { id: `v${++vault.n}`, label: body.label || 'Key', provider: body.provider, base: vaultBase(body.provider, body.url), value: body.value.trim() };
+                vault.keys.push(k);
+                return ok({ key: pub(k) });
+            }
+            case 'keys/delete': {
+                const i = vault.keys.findIndex(k => k.id === body.id);
+                if (i < 0) return vErr(404, 'no_key', 'Key not found');
+                vault.keys.splice(i, 1);
+                return ok({ ok: true });
+            }
+            case 'keys/import': {
+                const item = (secrets[body.secretKey] || []).find(x => x.id === body.secretId);
+                if (!item?.value) return vErr(404, 'no_key', 'Shared key not found');
+                const k = { id: `v${++vault.n}`, label: (item.label || '').replace(/^AI Player\s*[:·-]?\s*/, '') || 'Key', provider: body.provider, base: vaultBase(body.provider, body.url), value: item.value };
+                vault.keys.push(k);
+                return ok({ key: pub(k) });
+            }
+            case 'generate': {
+                const k = vault.keys.find(x => x.id === body.keyId);
+                if (!k) return vErr(404, 'no_key', 'Key not found in AI Player storage');
+                if (k.provider !== body.provider || k.base !== vaultBase(body.provider, body.url)) return vErr(400, 'key_mismatch', `Key is bound to another address (${k.base})`);
+                vault.used.push({ keyId: k.id, value: k.value, base: k.base });
+                const call = { url: '/api/plugins/ai-player/generate', body };
+                const text = isReactionCall(call) ? (env.reactionText ?? REACTION_TEXT) : isTestCall(call) ? 'готов' : isMemoryCall(call) ? MEMORY_TEXT : turnReply;
+                return ok({ text, usage: { total_tokens: 42 }, truncated: false });
+            }
+            case 'models': return ok({ models: ['vm1', 'vm2'] });
+            default: return res(404, undefined);
+        }
+    };
+
     const respond = (route, body) => {
+        // управляемые сбои: env.fail[route] = { status, body } — ответ сервера с ошибкой
+        const f = env.fail?.[route];
+        if (f) return res(f.status, f.body);
+        if (route.startsWith('plugins/ai-player/')) {
+            // без плагина ST отвечает 404 HTML-страницей «Cannot POST …» (не JSON)
+            if (!opts.plugin) return res(404, undefined);
+            return vaultRoute(route.slice('plugins/ai-player/'.length), body);
+        }
         switch (route) {
             case 'secrets/read':
                 // при исключении на сервере ST отвечает 200 и {}
@@ -257,7 +320,7 @@ export function setup(opts = {}) {
             }
             case 'backends/chat-completions/generate': {
                 const call = { url: '/api/backends/chat-completions/generate', body };
-                const text = isReactionCall(call) ? REACTION_TEXT : isTestCall(call) ? 'готов' : isMemoryCall(call) ? MEMORY_TEXT : turnReply;
+                const text = isReactionCall(call) ? (env.reactionText ?? REACTION_TEXT) : isTestCall(call) ? 'готов' : isMemoryCall(call) ? MEMORY_TEXT : turnReply;
                 if (body.chat_completion_source === 'claude') {
                     // sendClaudeRequest: ключ — пароль прокси или секрет; пустой → 400 { error: true }
                     const apiKey = body.reverse_proxy ? body.proxy_password : readSecret('api_key_claude', body.secret_id);
@@ -282,6 +345,8 @@ export function setup(opts = {}) {
         const sig = init.signal;
         const work = (async () => {
             if (gates[route]) await gates[route].promise;
+            // сетевой сбой: fetch отклоняется (как при обрыве связи с сервером ST)
+            if (env.netFail?.includes(route)) throw new w.TypeError('Failed to fetch');
             return respond(route, body);
         })();
         if (!sig) return work;
@@ -321,7 +386,7 @@ export function setup(opts = {}) {
     if (!aip) throw new Error('index.js не загрузился: ' + JSON.stringify(logs));
 
     return {
-        dom, w, doc, c, card, calls, toasts, confirms, logs, counters, state, env, sent, blobs, aip, gate, eventSource, event_types,
+        dom, w, doc, c, card, calls, toasts, confirms, logs, counters, state, env, sent, blobs, aip, gate, eventSource, event_types, vault,
         secrets, tick,
         $: sel => doc.querySelector(sel),
         $$: sel => [...doc.querySelectorAll(sel)],

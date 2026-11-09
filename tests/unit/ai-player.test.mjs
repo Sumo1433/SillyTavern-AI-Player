@@ -2,7 +2,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     setup, waitFor, sleep, agentTurn, botReply, botSwipe, botContinue, regenerate, PROFILE, newId,
-    isGenerate, isReactionCall, isTurnCall, isSecretCall, REACTION_TEXT, isMemoryCall, MEMORY_TEXT,
+    isGenerate, isReactionCall, isTurnCall, isSecretCall, REACTION_TEXT, isMemoryCall, MEMORY_TEXT, isProbe,
 } from './harness.mjs';
 
 let t;
@@ -492,7 +492,7 @@ test('7i. Закрытие окна мыслей снимает aip-has-new', as
 });
 
 // ---------------------------------------------------------------- 8
-test('8. Ключи: сохранение с меткой «AI Player · …», rotate на прежний, список, выбор, удаление', async () => {
+test('8. Ключи (общий режим, без плагина): метка «AI Player · …», rotate на прежний, список, выбор, удаление', async () => {
     t = setup({
         extensionSettings: { ai_player: { profiles: [{ ...PROFILE(), secretId: null }], activeProfile: 'p1', lastVersion: '0.2.8' } },
         secrets: {
@@ -505,10 +505,12 @@ test('8. Ключи: сохранение с меткой «AI Player · …», 
     t.click('#aip_menu');
     const sel = t.$('#aip_keySelect');
     const K = newId(1);
-    // 0.3.0: у таверны есть ключ → заглушки «ключей нет» нет, только пункт «ключ таверны»
-    await waitFor(() => sel.options.length === 1 && sel.options[0].value === '', { msg: 'список: только ключ таверны' });
+    // 0.5.1: ключ основного подключения таверны не предлагается и не используется как запасной
+    await waitFor(() => sel.options.length === 1 && sel.options[0].value === '__none', { msg: 'список: «ключей расширения нет»' });
     assert.ok(t.$('#aip_addKey').open, 'блок «Добавить ключ» раскрыт — своих ключей нет');
-    assert.equal(t.$('#aip_keyState').dataset.state, 'shared');
+    assert.equal(t.$('#aip_keyState').dataset.state, 'none');
+    assert.equal(t.$('#aip_storeMode').dataset.mode, 'legacy', 'пометка: плагин не установлен');
+    assert.match(t.$('#aip_storeMode').textContent, /enableServerPlugins/);
 
     t.$('#aip_keyLabel').value = 'Основной';
     t.$('#aip_keyInput').value = 'sk-secret-ABCD';
@@ -526,19 +528,12 @@ test('8. Ключи: сохранение с меткой «AI Player · …», 
     assert.ok(!JSON.stringify(t.c.extensionSettings).includes('sk-secret-ABCD'), 'ключ не в настройках');
 
     await waitFor(() => [...sel.options].some(o => o.value === K), { msg: 'новый ключ в списке' });
-    assert.deepEqual([...sel.options].map(o => o.value), [K, ''], 'только ключи AI Player + ключ таверны');
+    assert.deepEqual([...sel.options].map(o => o.value), [K], 'только ключи AI Player, без ключа таверны');
     assert.match(sel.options[0].textContent, /Основной/);
     assert.match(sel.options[0].textContent, /…BCD/, 'ST отдаёт *******BCD — видны 3 последних символа');
     assert.ok(!sel.options[0].textContent.includes('sk-secret'), 'полный ключ в браузер не попадает');
-    assert.match(sel.options[1].textContent, /таверны/);
     assert.equal(sel.value, K);
-
-    // выбор ключа таверны
-    t.input('#aip_keySelect', '', 'change');
-    assert.equal(t.s().profiles[0].secretId, null);
-    // и обратно
-    t.input('#aip_keySelect', K, 'change');
-    assert.equal(t.s().profiles[0].secretId, K);
+    assert.match(t.$('#aip_keyState').textContent, /виден в менеджере ключей таверны/, 'общий режим честно помечен');
 
     // удаление
     await waitFor(() => sel.value === K);
@@ -592,22 +587,26 @@ test('8c. Первый ключ, у таверны ключей нет → write
     assert.equal(t.secrets.api_key_custom.find(x => x.active).id, newId(2));
 });
 
-test('8d. [БАГ] Остался только ключ-заглушка (ключ расширения удалён) — ▶ всё равно шлёт запрос с пустым ключом', async () => {
-    t = setup({
-        extensionSettings: { ai_player: { profiles: [{ ...PROFILE(), secretId: null }], activeProfile: 'p1', lastVersion: '0.3.0' } },
-        secrets: { api_key_custom: [{ id: 'ph', label: 'Пусто — заглушка AI Player (ключ таверны не задан)', value: '', active: true }] },
+for (const [name, secrets] of [
+    ['остался только ключ-заглушка', { api_key_custom: [{ id: 'ph', label: 'Пусто — заглушка AI Player (ключ таверны не задан)', value: '', active: true }] }],
+    ['у основного подключения таверны есть свой активный ключ', { api_key_custom: [{ id: 't1', label: 'api_key_custom', value: 'sk-tavern-main-2222', active: true }] }],
+]) {
+    test(`8d. Профиль без своего ключа (${name}) — ▶ не шлёт запрос и не берёт ключ таверны`, async () => {
+        t = setup({
+            extensionSettings: { ai_player: { profiles: [{ ...PROFILE(), secretId: null }], activeProfile: 'p1', lastVersion: '0.3.0' } },
+            secrets,
+        });
+        t.click('#aip_menu');
+        await waitFor(() => t.$('#aip_keyState').dataset.state === 'none', { msg: 'окно: «нет своего ключа»' });
+        assert.match(t.$('#aip_keyState').textContent, /нет своего ключа/);
+        t.click('#aip_close');
+        t.click('#aip_play');
+        await waitFor(() => !t.aip.busy);
+        await sleep(10);
+        assert.equal(t.generateCalls().length, 0, 'запрос без своего ключа не уходит');
+        assert.ok(t.toasts.some(x => x.type === 'warning' && /Сохраните API-ключ/.test(x.msg)));
     });
-    t.click('#aip_menu');
-    await waitFor(() => t.$('#aip_keyState').dataset.state === 'none', { msg: 'окно: «Ключа нет»' });
-    assert.match(t.$('#aip_keyState').textContent, /Ключа нет/);
-    t.click('#aip_close');
-    t.click('#aip_play');
-    await waitFor(() => !t.aip.busy);
-    await sleep(10);
-    assert.equal(t.generateCalls().length, 0,
-        'окно говорит «Ключа нет», а profileHasKey считает пустую заглушку ключом (list.length > 0) — платный/ошибочный запрос уходит с пустым ключом');
-    assert.ok(t.toasts.some(x => x.type === 'warning' && /Сохраните API-ключ/.test(x.msg)));
-});
+}
 
 test('8e. Сбой /api/secrets/read (200 и {}) — выбор ключа не сбрасывается, статус «Не удалось прочитать хранилище»', async () => {
     t = setup();
@@ -852,7 +851,7 @@ test('12. ▶ без открытого чата (getCurrentChatId = null) — �
     await waitFor(() => !t.aip.busy);
     await sleep(10);
     assert.ok(t.toasts.some(x => x.type === 'warning' && /Откройте чат/.test(x.msg)), JSON.stringify(t.toasts));
-    assert.equal(t.calls.length, 0, 'ни secrets/read, ни generate');
+    assert.equal(t.calls.filter(c => !isProbe(c)).length, 0, 'ни secrets/read, ни generate (только фоновая проверка плагина)');
     assert.equal(t.sent.length, 0);
 });
 
@@ -863,7 +862,7 @@ test('12b. ▶ при characterId undefined и без groupId — предупр
     await waitFor(() => !t.aip.busy);
     await sleep(10);
     assert.ok(t.toasts.some(x => x.type === 'warning' && /Откройте чат/.test(x.msg)));
-    assert.equal(t.calls.length, 0);
+    assert.equal(t.calls.filter(c => !isProbe(c)).length, 0);
 });
 
 // ---------------------------------------------------------------- 13

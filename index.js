@@ -12,7 +12,6 @@ const UI_EN = {
     "В списке ключей таверны появилась пустая «заглушка AI Player» — она нужна, чтобы ключ расширения не стал ключом основной таверны. Не удаляйте её, пока не добавите таверне свой ключ.": "An empty AI Player placeholder was added to Tavern's key list to keep the extension key from becoming the main Tavern key. Keep it until you add a main Tavern key.",
     "Удалить ключ «${0}» из хранилища SillyTavern? Его потеряют все профили, где он выбран.": "Delete key “${0}” from SillyTavern? All profiles using it will lose access.",
     "Не удалось удалить ключ (HTTP ${0})": "Could not delete key (HTTP ${0})",
-    "Выбран ключ, активный в панели API таверны. Удалить его из основной таверны?": "The key active in Tavern's API panel is selected. Delete it from Tavern?",
     "Игрок": "Player",
     "Группа": "Group",
     "Персонаж": "Character",
@@ -63,13 +62,10 @@ const UI_EN = {
     "модель вернула пустые записи": "the model returned empty notes",
     "Записи обрезаны по лимиту токенов — часть разделов могла потеряться": "Notes reached the token limit — some sections may be missing",
     "Записи игрока обновлены": "Player notes updated",
-    "[AI Player] записи не обновлены:": "[AI Player] notes update failed:",
-    "AI Player: записи не обновлены — ${0}": "AI Player: could not update notes — ${0}",
     "⏳ Обновляю записи…": "⏳ Updating notes…",
     "Записи от ${0}${1}${2}": "Notes from ${0}${1}${2}",
     " · учтены сообщения до #${0}": " · includes messages through #${0}",
     "Записей пока нет.": "No notes yet.",
-    "⚠ Сообщения, по которым составлены записи, удалены — в записях могут остаться отменённые события. Поправьте их или нажмите «Обновить».": "⚠ Messages used for these notes were deleted. The notes may retain undone events. Edit them or click Update.",
     "Память выключена: записи не обновляются сами и не подмешиваются в ход.": "Memory is off: notes are neither updated automatically nor added to turns.",
     "вручную": "manually",
     "[AI Player] шкала:": "[AI Player] context meter:",
@@ -102,8 +98,6 @@ const UI_EN = {
     "Таверна занята — ход оставлен в поле ввода": "Tavern is busy — the turn was left in the input field",
     "Основной API таверны не подключён — ход оставлен в поле ввода": "Tavern's main API is disconnected — the turn was left in the input field",
     "Последние сообщения игры:\n\n${0}\n\n[Что у тебя в голове об игре после ответа «${1}»?]": "Recent game messages:\n\n${0}\n\n[What is on your mind about the game after “${1}” replied?]",
-    "[AI Player] вывод не получен:": "[AI Player] could not get impressions:",
-    "AI Player: впечатление не получено — ${0}": "AI Player: could not get impressions — ${0}",
     " · свайп ${0}": " · swipe ${0}",
     "💭 Новое впечатление игрока": "💭 New player impressions",
     "Впечатления включены — нажмите, чтобы выключить": "Impressions are on — click to turn off",
@@ -227,8 +221,6 @@ const UI_EN = {
     "Сбросить «${0}» к стандартному?": "Reset “${0}” to the default?",
     "Ошибка: ${0}": "Error: ${0}",
     "Введите ключ": "Enter a key",
-    "Ключ добавлен в хранилище SillyTavern и выбран в профиле": "Key added to SillyTavern storage and selected for this profile",
-    "Удалять нечего — ключей расширения нет": "Nothing to delete — there are no extension keys",
     "Моделей: ${0} — выберите в поле «Модель»": "Models: ${0} — select one in the Model field",
     "Список не получен — впишите ID вручную": "Could not load the list — enter the model ID manually",
     "Проверка…": "Testing…",
@@ -243,13 +235,7 @@ const UI_EN = {
     "✎ Свой промпт. Изменения сохраняются сразу. Пустое поле = стандартный.": "✎ Custom prompt. Changes are saved immediately. Empty means default.",
     "Стандартный промпт. Начните править — сохранится как свой.": "Default prompt. Start editing to save a custom version.",
     "— ключей расширения нет, добавьте ниже —": "— no extension keys; add one below —",
-    "↪ Ключ, активный в панели API таверны": "↪ Key active in Tavern's API panel",
     "⚠ Не удалось прочитать хранилище ключей SillyTavern. Выбор ключа сохранён; попробуйте открыть окно ещё раз.": "⚠ Could not read SillyTavern key storage. Your key selection was preserved; try reopening this window.",
-    "🔒 Выбран ключ расширения (всего ключей расширения: ${0}). Ключи хранятся в secrets.json на сервере SillyTavern (там, где запущена таверна); в браузер приходит только маска с последними символами (если в config.yaml не включён allowKeysExposure). Ключи из панели API таверны здесь не показываются.": "🔒 Extension key selected (${0} extension keys). Keys are stored in secrets.json on the SillyTavern server. The browser receives a masked value unless allowKeysExposure is enabled in config.yaml. Main Tavern keys are not listed here.",
-    "↪ Используется ключ, активный в панели API таверны (${0}).${1}": "↪ Using the key active in Tavern's API panel (${0}).${1}",
-    " Эта версия ST хранит один ключ на провайдера.": " This ST version stores one key per provider.",
-    " Чтобы не путаться, добавьте отдельный ключ расширения.": " Add a separate extension key to avoid confusion.",
-    "⚠ Ключа нет — нажмите «Добавить ключ».": "⚠ No key — click Add key.",
     "Ошибка синхронизации: ${0}": "Synchronization error: ${0}",
     "[AI Player] окно не создано": "[AI Player] window was not created",
     "AI Player: окно не создано — ${0}": "AI Player: window was not created — ${0}",
@@ -283,7 +269,75 @@ const UI_EN = {
     "Версия ${0} загружена. Меню-палочка → AI Player.": "Version ${0} loaded. Wand menu → AI Player.",
     "Актёр — желание, подтекст, голос": "Actor — desire, subtext, voice",
     "Режиссёр — цели, темп, ставки": "Director — goals, pace, stakes",
-    "Анти-клише — чистая проза": "Anti-cliché — clean prose"
+    "Анти-клише — чистая проза": "Anti-cliché — clean prose",
+    "Ход": "Turn",
+    "Впечатление": "Impressions",
+    "Записи": "Notes",
+    "Список моделей": "Model list",
+    "Ключи": "Keys",
+    "ключ или пароль отклонён (ошибка авторизации)": "the key or password was rejected (authorization error)",
+    "превышен лимит запросов провайдера, попробуйте позже": "the provider's rate limit was exceeded; try again later",
+    "провайдер сообщает о нехватке средств": "the provider reports insufficient funds",
+    "провайдер не ответил вовремя": "the provider did not respond in time",
+    "нет соединения с API": "could not connect to the API",
+    "ошибка на стороне провайдера или прокси": "provider or proxy error",
+    "провайдер отклонил запрос": "the provider rejected the request",
+    "провайдер вернул непонятный ответ": "the provider returned an unexpected response",
+    "модель вернула пустой ответ": "the model returned an empty response",
+    "ключ не найден": "key not found",
+    "ключ привязан к другому адресу или типу API": "the key is bound to a different address or API type",
+    "плагин AI Player недоступен": "the AI Player plugin is unavailable",
+    "запрос не помещается в контекст модели": "the request does not fit in the model context",
+    "внутренняя ошибка": "internal error",
+    "ошибка": "error",
+    "Плагин AI Player не отвечает": "The AI Player plugin is not responding",
+    "Плагин AI Player не найден на сервере SillyTavern": "The AI Player plugin was not found on the SillyTavern server",
+    "Плагин не подтвердил сохранение ключа": "The plugin did not confirm that the key was saved",
+    "SillyTavern не подтвердил сохранение ключа": "SillyTavern did not confirm that the key was saved",
+    "Удалить ключ «${0}» из хранилища AI Player? Его потеряют все профили, где он выбран.": "Delete key “${0}” from AI Player storage? All profiles using it will lose access.",
+    "Удалять нечего: ${0} общих копий активны в основном подключении таверны или ещё выбраны в профилях без переноса": "Nothing to delete: ${0} shared copies are active in Tavern's main connection or still selected in profiles that were not migrated",
+    "Старых общих копий ключей AI Player нет": "There are no old shared copies of AI Player keys",
+    "пустая заглушка AI Player": "empty AI Player placeholder",
+    "Удалить из общего хранилища SillyTavern старые копии ключей AI Player (${0})?\n${1}${2}\n\nОсновное подключение таверны не изменится.": "Delete old copies of AI Player keys from SillyTavern's shared storage (${0})?\n${1}${2}\n\nTavern's main connection will not change.",
+    "\n\nНе трогаем ещё ${0}: они активны в основном подключении или выбраны в профилях без переноса.": "\n\n${0} more will be kept because they are active in the main connection or selected in profiles that were not migrated.",
+    "Удалено ${0}, не удалось удалить ${1} — повторите позже": "Deleted ${0}; could not delete ${1} — try again later",
+    "Удалено старых общих копий: ${0}": "Old shared copies deleted: ${0}",
+    "прежние записи и инструкции уже занимают ~${0} из ${1} токенов": "the previous notes and instructions already take ~${0} of ${1} tokens",
+    "сообщение #${0} слишком длинное для лимита ${1} токенов": "message #${0} is too long for the ${1}-token limit",
+    "AI Player: записи не обновлены — запрос не помещается в контекст модели (${0}). Увеличьте «Контекст модели» в профиле или сократите записи.": "AI Player: notes were not updated — the request does not fit in the model context (${0}). Increase the profile's model context or shorten the notes.",
+    "Записи не обновлены: пока шёл запрос, изменились сообщения, по которым они составлялись. Новые записи будут составлены при следующем обновлении.": "Notes were not updated: the messages they were based on changed during the request. New notes will be made on the next update.",
+    "Записи не обновлены: их изменили вручную, пока шёл запрос. Ваша правка сохранена.": "Notes were not updated: they were edited manually during the request. Your edit was kept.",
+    "Записи обновлены, но ${0} самых старых новых сообщений не поместились в контекст и не учтены.": "Notes were updated, but the ${0} oldest new messages did not fit in the context and were not included.",
+    " Нажмите, чтобы повторить.": " Click to retry.",
+    "⚠ Требуют проверки: сообщения, по которым составлены записи, изменены или удалены — в записях могут остаться отменённые события. Поправьте их вручную или очистите и обновите.": "⚠ Needs review: messages used for these notes were edited or deleted, so the notes may retain undone events. Edit them manually, or clear and update them.",
+    "При последнем обновлении не поместились и не учтены сообщений: ${0}.": "Messages that did not fit and were skipped in the last update: ${0}.",
+    "Ключ профиля хранится в плагине AI Player, но плагин не найден. Проверьте папку SillyTavern/plugins/ai-player и enableServerPlugins: true в config.yaml.": "The profile key is stored in the AI Player plugin, but the plugin was not found. Check the SillyTavern/plugins/ai-player folder and enableServerPlugins: true in config.yaml.",
+    "Нет связи с сервером SillyTavern": "Could not reach the SillyTavern server",
+    "У профиля нет своего ключа. Добавьте ключ в окне AI Player — ключ основного подключения таверны не используется.": "This profile has no key of its own. Add a key in AI Player — Tavern's main connection key is never used.",
+    "Сначала добавьте ключ профиля": "Add a key to the profile first",
+    "модель вернула пустое впечатление": "the model returned empty impressions",
+    "Ответ бота изменился или удалён — повторять нечего": "The bot's reply changed or was deleted — nothing to retry",
+    "Повторить": "Retry",
+    "Перенести в хранилище AI Player": "Move to AI Player storage",
+    "Удалить старые общие копии": "Delete old shared copies",
+    "Ключ сохранён в хранилище AI Player и выбран в профиле. Менеджер ключей таверны не изменился.": "Key saved to AI Player storage and selected for this profile. Tavern's key manager was not changed.",
+    "Ключ добавлен в общее хранилище SillyTavern и выбран в профиле": "Key added to SillyTavern's shared storage and selected for this profile",
+    "В профиле не выбран ключ — удалять нечего": "No key is selected in this profile — nothing to delete",
+    "Ключ перенесён в хранилище AI Player. Старая общая копия пока осталась в менеджере ключей таверны — удалите её кнопкой «Удалить старые общие копии», когда перенесёте все профили.": "Key moved to AI Player storage. The old shared copy is still in Tavern's key manager — remove it with Delete old shared copies once all profiles are migrated.",
+    "🔒 Плагин AI Player ${0} установлен: ключи и пароли прокси хранятся отдельно от ключей таверны (data/<пользователь>/ai-player/keys.json на сервере), в менеджере ключей таверны не появляются, в браузер не передаются. Каждый ключ привязан к типу API и адресу, с которым его сохранили.": "🔒 AI Player plugin ${0} is installed: keys and proxy passwords are stored separately from Tavern keys (data/<user>/ai-player/keys.json on the server), do not appear in Tavern's key manager, and are never sent to the browser. Each key is bound to the API type and address it was saved with.",
+    "⚠ Плагин AI Player не установлен. Ключи хранятся в общем хранилище SillyTavern (secrets.json) и видны в менеджере ключей основного подключения. Для полной изоляции установите серверный плагин и перезапустите таверну:": "⚠ The AI Player plugin is not installed. Keys are stored in SillyTavern's shared storage (secrets.json) and are visible in the main connection's key manager. For full isolation, install the server plugin and restart Tavern:",
+    "и в config.yaml: ": "and in config.yaml: ",
+    " · ⚠ другой адрес": " · ⚠ different address",
+    "↪ Старый общий ключ (не перенесён)": "↪ Old shared key (not migrated)",
+    "— выберите ключ —": "— select a key —",
+    "— ключей нет, добавьте ниже —": "— no keys; add one below —",
+    "⚠ Не удалось прочитать хранилище плагина AI Player. Выбор ключа сохранён; попробуйте открыть окно ещё раз.": "⚠ Could not read AI Player plugin storage. Your key selection was preserved; try reopening this window.",
+    "↪ Профиль пока использует старый ключ из общего хранилища SillyTavern — он виден в менеджере ключей таверны. Нажмите «Перенести в хранилище AI Player»: плагин скопирует ключ на сервере, в браузер он не попадёт. Общая копия останется, пока вы её не удалите.": "↪ This profile still uses an old key from SillyTavern's shared storage, which is visible in Tavern's key manager. Click Move to AI Player storage: the plugin copies the key on the server without sending it to the browser. The shared copy stays until you delete it.",
+    "⚠ Выбранный ключ сохранён для другого адреса API. Плагин не отправит его на новый адрес — добавьте ключ для этого адреса.": "⚠ The selected key was saved for a different API address. The plugin will not send it to the new address — add a key for this address.",
+    "🔒 Выбран ключ из хранилища AI Player (ключей этого типа: ${0}).": "🔒 A key from AI Player storage is selected (${0} keys of this type).",
+    "🔑 Выбран ключ расширения (всего ключей расширения: ${0}). Он хранится в общем secrets.json SillyTavern на сервере и виден в менеджере ключей таверны; в браузер приходит только маска (если в config.yaml не включён allowKeysExposure).": "🔑 Extension key selected (${0} extension keys). It is stored in SillyTavern's shared secrets.json on the server and is visible in Tavern's key manager; the browser receives only a masked value unless allowKeysExposure is enabled in config.yaml.",
+    "⚠ У профиля нет своего ключа — выберите или добавьте ключ. Ключ основного подключения таверны AI Player не использует.": "⚠ This profile has no key of its own — select or add one. AI Player never uses Tavern's main connection key.",
+    "плагин ключей: ${0}": "key plugin: ${0}"
 };
 function tavernLocale() {
     try {
@@ -320,7 +374,7 @@ function languageRule() {
 // запущена); все запросы идут через бэкенд ST.
 
 const MODULE = 'ai_player';
-const VERSION = '0.5.0';
+const VERSION = '0.5.1';
 // ID из списка SillyTavern 1.19 + актуальные
 const CLAUDE_MODELS = ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5-5', 'claude-sonnet-5', 'claude-haiku-5-5'];
 const SOURCE = {
@@ -381,7 +435,7 @@ function newProfile(name, from = {}) {
         id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
         name, provider: from.provider || 'openai',
         url: from.url ?? SOURCE.openai.defUrl, model: from.model || '',
-        temperature: from.temperature ?? 0.9, contextSize: from.contextSize ?? 32000, secretId: null,
+        temperature: from.temperature ?? 0.9, contextSize: from.contextSize ?? 32000, secretId: null, keyId: null,
         proxyPassword: from.proxyPassword || '',
     };
 }
@@ -410,7 +464,106 @@ const findProfile = id => settings().s.profiles.find(p => p.id === id);
 const srcOf = p => SOURCE[p?.provider] || SOURCE.openai;
 const baseUrl = p => (p.url || '').trim().replace(/\/+$/, '').replace(/\/chat\/completions$/, '');
 
-// ---------- Секреты ST ----------
+// ---------- Ошибки запросов ----------
+// kind: auth | rate | billing | timeout | network | upstream | bad_request | bad_response | empty |
+//       no_key | key_mismatch | no_plugin | context | server | unknown
+class AipError extends Error {
+    constructor(kind, message, status = null) { super(message); this.name = 'AipError'; this.kind = kind; this.status = status; }
+}
+function kindByStatus(status) {
+    if (status === 401 || status === 403) return 'auth';
+    if (status === 429) return 'rate';
+    if (status === 402) return 'billing';
+    if (status === 408 || status === 504) return 'timeout';
+    if (status >= 500) return 'upstream';
+    if (status >= 400) return 'bad_request';
+    return 'unknown';
+}
+// Бэкенд ST часто отдаёт только текст ошибки провайдера — разбираем его, без догадок сверх этого
+function kindByMessage(msg) {
+    const t = String(msg || '');
+    if (/\b(401|403)\b|unauthori[sz]ed|forbidden|invalid[^.\n]{0,20}(api[ _-]?key|token|credential)|authentication/i.test(t)) return 'auth';
+    if (/\b429\b|rate[ _-]?limit|too many requests|quota/i.test(t)) return 'rate';
+    if (/insufficient[ _-](balance|funds|credit)|\b402\b|payment required/i.test(t)) return 'billing';
+    if (/timed? ?out|ETIMEDOUT|time-?out/i.test(t)) return 'timeout';
+    if (/ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|fetch failed|socket hang up|network/i.test(t)) return 'network';
+    if (/\b50[0234]\b|bad gateway|service unavailable|overloaded/i.test(t)) return 'upstream';
+    return null;
+}
+// Ни ключей, ни паролей, ни адресов с учётными данными в сообщениях и диагностике
+function redact(text) {
+    return String(text ?? '')
+        .replace(/Bearer\s+[^\s"']+/gi, 'Bearer ***')
+        .replace(/\b(sk|pk|key)-[A-Za-z0-9_-]{6,}/g, '$1-***')
+        .replace(/\b(AIza)[A-Za-z0-9_-]{10,}/g, '$1***')
+        .replace(/(https?:\/\/)[^/\s:@]+:[^/\s@]+@/gi, '$1***@')
+        .replace(/([?&](?:key|api_key|apikey|token|password)=)[^&\s]+/gi, '$1***');
+}
+const STAGE_LABELS = () => ({ turn: ui("Ход"), reaction: ui("Впечатление"), memory: ui("Записи"), test: ui("Тест"), models: ui("Список моделей"), keys: ui("Ключи") });
+const KIND_LABELS = () => ({
+    auth: ui("ключ или пароль отклонён (ошибка авторизации)"),
+    rate: ui("превышен лимит запросов провайдера, попробуйте позже"),
+    billing: ui("провайдер сообщает о нехватке средств"),
+    timeout: ui("провайдер не ответил вовремя"),
+    network: ui("нет соединения с API"),
+    upstream: ui("ошибка на стороне провайдера или прокси"),
+    bad_request: ui("провайдер отклонил запрос"),
+    bad_response: ui("провайдер вернул непонятный ответ"),
+    empty: ui("модель вернула пустой ответ"),
+    no_key: ui("ключ не найден"),
+    key_mismatch: ui("ключ привязан к другому адресу или типу API"),
+    no_plugin: ui("плагин AI Player недоступен"),
+    context: ui("запрос не помещается в контекст модели"),
+    server: ui("внутренняя ошибка"),
+    unknown: ui("ошибка"),
+});
+// «Записи: провайдер не ответил вовремя (HTTP 504). подробности…»
+function describeError(e, stage) {
+    const kind = e?.kind || kindByMessage(e?.message) || (e?.status ? kindByStatus(e.status) : 'unknown');
+    const labels = KIND_LABELS();
+    const head = `${STAGE_LABELS()[stage] || 'AI Player'}: ${labels[kind] || labels.unknown}${e?.status ? ` (HTTP ${e.status})` : ''}`;
+    const detail = short(redact(e?.message || ''));
+    return detail && detail !== labels[kind] ? `${head}. ${detail}` : head;
+}
+
+// ---------- Хранилище ключей ----------
+// Два режима:
+//  • плагин (vault) — серверный плагин AI Player (SillyTavern/plugins/ai-player) хранит ключи и пароли
+//    прокси отдельно от ключей таверны и сам отправляет запросы. Профиль хранит keyId.
+//  • общий (legacy) — плагина нет: ключи лежат в общих категориях secrets.json SillyTavern и видны
+//    в менеджере ключей таверны; запросы идут через бэкенд ST. Профиль хранит secretId.
+// Активный ключ основного подключения таверны как запасной не используется ни в одном режиме.
+const VAULT = '/api/plugins/ai-player';
+const vault = { checked: false, ok: false, version: null };
+async function probeVault() {
+    try {
+        const r = await post(`${VAULT}/probe`);
+        const j = r.ok ? await r.json().catch(() => null) : null;
+        Object.assign(vault, { checked: true, ok: !!j?.ok, version: j?.version ?? null });
+    } catch { Object.assign(vault, { checked: true, ok: false, version: null }); }
+    return vault.ok;
+}
+async function vaultCall(route, body, signal) {
+    let r;
+    try { r = await post(`${VAULT}${route}`, body, signal); }
+    catch (e) { if (e?.name === 'AbortError') throw e; throw new AipError('no_plugin', ui("Плагин AI Player не отвечает")); }
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j) {
+        if (!j?.error && (r.status === 404 || r.status === 405)) { vault.ok = false; throw new AipError('no_plugin', ui("Плагин AI Player не найден на сервере SillyTavern")); }
+        const er = j?.error || {};
+        throw new AipError(er.kind || kindByStatus(r.status), er.message || `HTTP ${r.status}`, er.status ?? null);
+    }
+    return j;
+}
+const vaultKeys = async provider => (await vaultCall('/keys/list', { provider })).keys || [];
+// адрес, к которому плагин привяжет ключ (та же нормализация, что на сервере)
+function vaultBase(p) {
+    if (p.provider === 'anthropic') return 'https://api.anthropic.com/v1';
+    const u = String(p.url || '').trim().replace(/\/+$/, '');
+    return srcOf(p).proxy ? u.replace(/\/messages$/, '') : u.replace(/\/chat\/completions$/, '');
+}
+
+// ---------- Секреты ST (общий режим) ----------
 async function secretState() {
     const r = await post('/api/secrets/read');
     if (!r.ok) throw new Error(ui`Не удалось прочитать состояние ключей (HTTP ${r.status})`);
@@ -424,13 +577,16 @@ function slotList(state, key) {
     if (Array.isArray(v)) return v;
     return v ? [{ id: null, active: true, legacy: true }] : [];
 }
+// Есть ли у профиля СВОЙ ключ. Активный ключ основного подключения таверны не считается.
 async function profileHasKey(p) {
-    if (srcOf(p).proxy) return !!(p.url && p.proxyPassword);   // реверс-прокси Claude: адрес + пароль в профиле
-    try {
-        const list = slotList(await secretState(), srcOf(p).secret);
-        // без своего ключа ST возьмёт активный ключ таверны — он должен быть настоящим, а не заглушкой
-        return p.secretId ? list.some(x => x.id === p.secretId) : list.some(x => x.active && x.label !== PLACEHOLDER_LABEL);
-    } catch { return false; }
+    if (p.keyId) {
+        if (!vault.checked) await probeVault();
+        if (!vault.ok) return false;
+        try { return (await vaultKeys(p.provider)).some(k => k.id === p.keyId); } catch { return false; }
+    }
+    if (srcOf(p).proxy) return !!(p.url && p.proxyPassword);   // общий режим: адрес + пароль прокси в профиле
+    if (!p.secretId) return false;
+    try { return slotList(await secretState(), srcOf(p).secret).some(x => x.id === p.secretId); } catch { return false; }
 }
 // Ключи расширения помечаются меткой «AI Player …», чтобы не смешивать их с ключами самой таверны
 const AIP_LABEL = 'AI Player';
@@ -439,11 +595,22 @@ const keyName = x => (x?.label || ui("без названия")).replace(/^AI Pl
 
 const PLACEHOLDER_LABEL = 'Пусто — заглушка AI Player (ключ таверны не задан)';
 
-// Добавляет ключ ОТДЕЛЬНЫМ значением (старые ключи остаются в списке) и выбирает его в профиле.
-// ST всегда делает новый ключ активным для всей таверны — поэтому возвращаем таверне её прежний
-// активный ключ, а если его не было — ставим пустую заглушку, чтобы ключ расширения не ушёл
-// на адрес основного подключения таверны.
+// Добавляет ключ и выбирает его в профиле.
+// С плагином — в отдельное хранилище AI Player (общий менеджер ключей таверны не меняется).
+// Без плагина — ОТДЕЛЬНЫМ значением в общую категорию ST. ST всегда делает новый ключ активным
+// для всей таверны — поэтому возвращаем таверне её прежний активный ключ, а если его не было —
+// ставим пустую заглушку, чтобы ключ расширения не ушёл на адрес основного подключения таверны.
 async function saveProfileKey(p, value, label) {
+    if (vault.ok) {
+        const j = await vaultCall('/keys/add', { provider: p.provider, url: p.url, value, label: label || p.name });
+        if (!j?.key?.id) throw new AipError('bad_response', ui("Плагин не подтвердил сохранение ключа"));
+        p.keyId = j.key.id;
+        p.secretId = null;
+        if (srcOf(p).proxy) p.proxyPassword = '';     // пароль прокси теперь в хранилище плагина
+        settings().save();
+        return true;
+    }
+    if (srcOf(p).proxy) return false;                 // общий режим: пароль прокси — поле профиля
     const key = srcOf(p).secret;
     const before = slotList(await secretState(), key);
     if (before.some(x => x.legacy) && !confirm(ui("Эта версия SillyTavern хранит один ключ на провайдера — несколько ключей недоступны. Новый ключ заменит ключ основной таверны. Продолжить?"))) return false;
@@ -451,7 +618,9 @@ async function saveProfileKey(p, value, label) {
     const r = await post('/api/secrets/write', { key, value, label: `${AIP_LABEL} · ${label || p.name}` });
     if (!r.ok) throw new Error(ui`Не удалось сохранить ключ (HTTP ${r.status})`);
     const j = await r.json().catch(() => ({}));
+    if (!j?.id && !before.some(x => x.legacy)) throw new AipError('bad_response', ui("SillyTavern не подтвердил сохранение ключа"));
     p.secretId = j?.id || null;
+    p.keyId = null;
     if (j?.id) {
         if (prevActive && prevActive !== j.id) {
             await post('/api/secrets/rotate', { key, id: prevActive }).catch(() => {});
@@ -467,29 +636,89 @@ async function saveProfileKey(p, value, label) {
     settings().save();
     return true;
 }
-// Удаляет выбранный в профиле ключ из хранилища ST
+// Удаляет выбранный в профиле ключ. Ключ основного подключения таверны отсюда не удаляется никогда.
 async function deleteProfileKey(p) {
+    const { s, save } = settings();
+    if (p.keyId) {
+        const item = vault.ok ? (await vaultKeys(p.provider).catch(() => [])).find(k => k.id === p.keyId) : null;
+        if (!confirm(ui`Удалить ключ «${item?.label || ui("без названия")}» из хранилища AI Player? Его потеряют все профили, где он выбран.`)) return false;
+        await vaultCall('/keys/delete', { id: p.keyId });
+        const id = p.keyId;
+        for (const x of s.profiles) if (x.keyId === id) x.keyId = null;
+        save();
+        return true;
+    }
+    if (!p.secretId) return false;
     const key = srcOf(p).secret;
-    if (p.secretId) {
-        const item = slotList(await secretState(), key).find(x => x.id === p.secretId);
-        if (!confirm(ui`Удалить ключ «${keyName(item)}» из хранилища SillyTavern? Его потеряют все профили, где он выбран.`)) return;
-        const r = await post('/api/secrets/delete', { key, id: p.secretId });
-        if (!r.ok) throw new Error(ui`Не удалось удалить ключ (HTTP ${r.status})`);
-        for (const x of settings().s.profiles) if (x.secretId === p.secretId) x.secretId = null;
-        settings().save();
-        return;
+    const item = slotList(await secretState(), key).find(x => x.id === p.secretId);
+    if (!confirm(ui`Удалить ключ «${keyName(item)}» из хранилища SillyTavern? Его потеряют все профили, где он выбран.`)) return false;
+    const r = await post('/api/secrets/delete', { key, id: p.secretId });
+    if (!r.ok) throw new AipError(kindByStatus(r.status), ui`Не удалось удалить ключ (HTTP ${r.status})`);
+    const id = p.secretId;
+    for (const x of s.profiles) if (x.secretId === id) x.secretId = null;
+    save();
+    return true;
+}
+
+// ---------- Переход на хранилище плагина ----------
+// Ключ профиля из общего secrets.json копируется плагином на сервере (в браузер не попадает).
+// Общая копия остаётся на месте: удалить её — отдельное подтверждённое действие (cleanLegacyCopies).
+const needsMigration = p => vault.ok && !p.keyId && (srcOf(p).proxy ? !!p.proxyPassword : !!p.secretId);
+async function migrateProfileKey(p) {
+    if (!needsMigration(p)) return false;
+    const { s, save } = settings();
+    if (srcOf(p).proxy) {
+        const j = await vaultCall('/keys/add', { provider: 'claude_proxy', url: p.url, value: p.proxyPassword, label: p.name });
+        p.keyId = j.key.id;
+        p.proxyPassword = '';
+        save();
+        return true;
     }
-    if (!confirm(ui("Выбран ключ, активный в панели API таверны. Удалить его из основной таверны?"))) return;
-    const r = await post('/api/secrets/delete', { key });
-    if (!r.ok) throw new Error(ui`Не удалось удалить ключ (HTTP ${r.status})`);
-    // после удаления ST делает активным первый оставшийся — если это ключ расширения, возвращаем заглушку
-    const after = slotList(await secretState(), key);
-    const act = after.find(x => x.active);
-    if (act && isAipKey(act)) {
-        const ph = after.find(x => x.label === PLACEHOLDER_LABEL);
-        if (ph) await post('/api/secrets/rotate', { key, id: ph.id });
-        else await post('/api/secrets/write', { key, value: '', label: PLACEHOLDER_LABEL });
+    const j = await vaultCall('/keys/import', { secretKey: srcOf(p).secret, secretId: p.secretId, provider: p.provider, url: p.url, label: '' });
+    const old = p.secretId;
+    // тот же ключ у профилей с тем же типом и адресом — переносим одним ключом
+    for (const x of s.profiles) {
+        if (x.secretId === old && x.provider === p.provider && vaultBase(x) === vaultBase(p)) {
+            x.keyId = j.key.id;
+            x.legacySecretId = old;
+            x.secretId = null;
+        }
     }
+    save();
+    return true;
+}
+// Старые общие копии ключей AI Player (и заглушка) в secrets.json таверны
+async function legacyCopies() {
+    const state = await secretState();
+    const out = [];
+    for (const key of ['api_key_custom', 'api_key_claude']) {
+        for (const x of slotList(state, key)) if (x.id && (isAipKey(x) || x.label === PLACEHOLDER_LABEL)) out.push({ ...x, key });
+    }
+    return out;
+}
+// Удаляет только неактивные копии, которые не выбраны ни в одном профиле без переноса:
+// активный ключ основного подключения и его выбор не меняются.
+async function cleanLegacyCopies() {
+    const { s, save } = settings();
+    const items = await legacyCopies();
+    const used = new Set(s.profiles.map(p => p.secretId).filter(Boolean));
+    const del = items.filter(x => !x.active && !used.has(x.id));
+    const kept = items.length - del.length;
+    if (!del.length) {
+        toastr.info(kept ? ui`Удалять нечего: ${kept} общих копий активны в основном подключении таверны или ещё выбраны в профилях без переноса` : ui("Старых общих копий ключей AI Player нет"), 'AI Player');
+        return { deleted: 0, failed: 0, kept };
+    }
+    const names = del.map(x => `• ${x.label === PLACEHOLDER_LABEL ? ui("пустая заглушка AI Player") : keyName(x)}`).join('\n');
+    if (!confirm(ui`Удалить из общего хранилища SillyTavern старые копии ключей AI Player (${del.length})?\n${names}${kept ? ui`\n\nНе трогаем ещё ${kept}: они активны в основном подключении или выбраны в профилях без переноса.` : ''}\n\nОсновное подключение таверны не изменится.`)) return null;
+    let deleted = 0, failed = 0;
+    for (const x of del) {
+        try { (await post('/api/secrets/delete', { key: x.key, id: x.id })).ok ? deleted++ : failed++; } catch { failed++; }
+    }
+    for (const p of s.profiles) if (p.legacySecretId && del.some(x => x.id === p.legacySecretId)) delete p.legacySecretId;
+    save();
+    if (failed) toastr.warning(ui`Удалено ${deleted}, не удалось удалить ${failed} — повторите позже`, 'AI Player');
+    else toastr.success(ui`Удалено старых общих копий: ${deleted}`, 'AI Player');
+    return { deleted, failed, kept };
 }
 
 // ---------- Синхронизация с ST ----------
@@ -686,9 +915,26 @@ function buildMessages(s, sync, system = '') {
 }
 
 // ---------- Записи игрока (память персонажа) ----------
-// chatMetadata.aip_memory = { chatId, text, upTo, upToDate, updated, model }
+// chatMetadata.aip_memory = { chatId, text, upTo, upToDate, hash, rev, review, skipped, updated, model }
 // upTo/upToDate — последнее учтённое сообщение (ход агента; ответ бота после него не входит,
-// поэтому свайп и перегенерация ответа записи не портят).
+// поэтому свайп и перегенерация ответа записи не портят). hash — отпечаток учтённой истории
+// (текст, вариант свайпа, дата и порядок сообщений 0..upTo): если история изменилась, записи
+// помечаются как требующие проверки. rev растёт при каждой записи — так фоновое обновление
+// узнаёт, что записи поправили вручную или очистили, пока шёл запрос.
+const isPlayable = m => !!m && !m.is_system && !!(m.mes || '').trim();
+function fnv1a(str, h = 0x811c9dc5) {
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    return h >>> 0;
+}
+function historyHash(chat, end) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i <= end && i < (chat?.length || 0); i++) {
+        const m = chat[i];
+        if (!isPlayable(m)) continue;
+        h = fnv1a(`${i}\u0001${m.send_date ?? ''}\u0001${m.swipe_id ?? 0}\u0001${m.is_user ? 1 : 0}\u0001${m.mes}\u0002`, h);
+    }
+    return h.toString(36);
+}
 function memoryState() {
     const c = ctx();
     const mem = c.chatMetadata?.aip_memory;
@@ -704,9 +950,11 @@ function memoryState() {
             if (!sameChat) return null;
             index = Math.min(num(mem.upTo, -1, 1e9, -1), chat.length - 1);
             stale = true;     // учтённое сообщение удалено — в записях могут быть отменённые события
+        } else if (mem.hash && historyHash(chat, index) !== mem.hash) {
+            stale = true;     // учтённую историю отредактировали, удалили или сменили свайп
         }
     }
-    return { ...mem, index, stale };
+    return { ...mem, index, stale: stale || !!mem.review };
 }
 
 function memoryBlock(s, sync) {
@@ -726,7 +974,8 @@ async function updateMemory({ upTo, manual = false } = {}) {
     const chat = c.chat || [];
     const end = Math.min(upTo ?? chat.length - 1, chat.length - 1);
     const mem = memoryState();
-    const fresh = chat.slice(mem ? mem.index + 1 : 0, end + 1).filter(m => !m.is_system && (m.mes || '').trim());
+    const from = mem ? mem.index + 1 : 0;
+    const fresh = chat.slice(from, end + 1).filter(isPlayable);
     if (!fresh.length) { if (manual) toastr.info(ui("Новых сообщений для записей нет")); return false; }
     const lastAgent = chat.slice(0, end + 1).reverse().find(m => m.is_user && m.extra?.aip);
     const p = findProfile(lastAgent?.extra.aip.profileId) || activeProfile();
@@ -734,33 +983,68 @@ async function updateMemory({ upTo, manual = false } = {}) {
     const sync = getSync();
     const system = renderPrompt(s, sync, 'memory');
     const endDate = chat[end]?.send_date ?? null;
-    // самые новые сообщения важнее: если не влезают, отбрасываем старые
-    let lines = fresh.map(m => `${m.is_user ? promptText("[ТЫ] ") : ''}${m.name}: ${m.mes}`);
-    const budget = ctxLimit(p) - 2000 - estTokens(system) - estTokens(mem?.text);
-    let skipped = 0;
-    while (lines.length > 1 && lines.reduce((a, l) => a + estTokens(l) + 4, 0) > budget) { lines = lines.slice(1); skipped++; }
-    const user = promptText`Прежние записи:\n${mem ? String(mem.text).trim() : promptText("(пока пусто)")}\n\n`
-        + promptText`Новые сообщения игры${skipped ? promptText` (самые старые ${skipped} не поместились)` : ''}:\n\n${lines.join('\n\n')}\n\n`
+    // ---- бюджет (п. 3): фактический лимит ответа, системный промпт с правилом языка, прежние
+    // записи целиком (их не режем), служебный текст и запас на разметку сообщений
+    const maxOut = memoryMaxTokens(p);
+    const prevText = mem ? String(mem.text).trim() : '';
+    const frame = skipped => promptText`Прежние записи:\n${prevText || promptText("(пока пусто)")}\n\n`
+        + promptText`Новые сообщения игры${skipped ? promptText` (самые старые ${skipped} не поместились)` : ''}:\n\n${'\u0000'}\n\n`
         + promptText`[Обнови записи «${sync.personaName}». Выведи только записи.]`;
+    const overhead = 64;                                           // роли, разделители, служебные токены
+    const limit = ctxLimit(p);
+    let lines = fresh.map(m => `${m.is_user ? promptText("[ТЫ] ") : ''}${m.name}: ${m.mes}`);
+    const total = (ls, skipped) => estTokens(system) + estTokens(frame(skipped)) + ls.reduce((a, l) => a + estTokens(l) + 4, 0) + maxOut + overhead;
+    let skipped = 0;
+    // самые новые сообщения важнее: если не влезают, отбрасываем старые и говорим об этом явно
+    while (lines.length > 1 && total(lines, skipped) > limit) { lines = lines.slice(1); skipped++; }
+    if (total(lines, skipped) > limit) {
+        // минимальный запрос (прежние записи + одно сообщение) не помещается — не отправляем
+        const without = estTokens(system) + estTokens(frame(0)) + maxOut + overhead;
+        const why = without > limit
+            ? ui`прежние записи и инструкции уже занимают ~${without} из ${limit} токенов`
+            : ui`сообщение #${chat.indexOf(fresh.at(-1))} слишком длинное для лимита ${limit} токенов`;
+        toastr.warning(ui`AI Player: записи не обновлены — запрос не помещается в контекст модели (${why}). Увеличьте «Контекст модели» в профиле или сократите записи.`, 'AI Player', { timeOut: 10000 });
+        return false;
+    }
+    const user = frame(skipped).replace('\u0000', lines.join('\n\n'));
+    // ---- снимок (п. 2): учтённая история 0..end и ревизия записей на момент запуска
+    const meta0 = c.chatMetadata;
+    const snap = { hash: historyHash(chat, end), rev: meta0?.aip_memory?.rev ?? 0, text: meta0?.aip_memory?.text ?? null };
     memBusy = true;
     memCtl = new AbortController();
     const signal = memCtl.signal;
     renderMemory();
     try {
-        const res = await callModel(p, s, system, [{ role: 'user', content: user }],
-            { maxTokens: srcOf(p).source === 'claude' ? 2500 : 1000, signal });
+        const res = await callModel(p, s, system, [{ role: 'user', content: user }], { maxTokens: maxOut, signal });
         if (chatId() !== id0 || signal.aborted) return false;
         const text = String(res.text || '').replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '').trim();
-        if (!text) throw new Error(ui("модель вернула пустые записи"));
-        if (res.truncated) toastr.warning(ui("Записи обрезаны по лимиту токенов — часть разделов могла потеряться"), 'AI Player');
+        if (!text) throw new AipError('empty', ui("модель вернула пустые записи"));
         const meta = ctx().chatMetadata;
         if (!meta) return false;
-        meta.aip_memory = { chatId: id0, text, upTo: end, upToDate: endDate, updated: Date.now(), model: p.model };
+        // пока шёл запрос, изменили учтённые сообщения (правка, удаление, свайп) — результат устарел
+        if (historyHash(ctx().chat || [], end) !== snap.hash) {
+            toastr.info(ui("Записи не обновлены: пока шёл запрос, изменились сообщения, по которым они составлялись. Новые записи будут составлены при следующем обновлении."), 'AI Player', { timeOut: 7000 });
+            return false;
+        }
+        // записи поправили вручную или очистили — свежая правка важнее результата запроса
+        if ((meta.aip_memory?.rev ?? 0) !== snap.rev || (meta.aip_memory?.text ?? null) !== snap.text) {
+            toastr.info(ui("Записи не обновлены: их изменили вручную, пока шёл запрос. Ваша правка сохранена."), 'AI Player', { timeOut: 7000 });
+            return false;
+        }
+        if (res.truncated) toastr.warning(ui("Записи обрезаны по лимиту токенов — часть разделов могла потеряться"), 'AI Player');
+        if (skipped) toastr.warning(ui`Записи обновлены, но ${skipped} самых старых новых сообщений не поместились в контекст и не учтены.`, 'AI Player', { timeOut: 7000 });
+        meta.aip_memory = {
+            chatId: id0, text, upTo: end, upToDate: endDate, hash: snap.hash, rev: snap.rev + 1,
+            review: !!mem?.stale, skipped: skipped || 0, updated: Date.now(), model: p.model,
+        };
         ctx().saveMetadata?.();
         if (manual) toastr.success(ui("Записи игрока обновлены"), 'AI Player', { timeOut: 2500 });
         return true;
     } catch (e) {
-        if (e.name !== 'AbortError') { console.warn(ui("[AI Player] записи не обновлены:"), e); toastr.warning(ui`AI Player: записи не обновлены — ${short(e.message)}`); }
+        if (e.name !== 'AbortError') {
+            console.warn('[AI Player]', redact(e?.message));
+            toastr.warning(describeError(e, 'memory') + ui(" Нажмите, чтобы повторить."), 'AI Player', { timeOut: 10000, onclick: () => updateMemory({ upTo: end, manual: true }) });
+        }
         return false;
     } finally {
         memBusy = false;
@@ -799,7 +1083,8 @@ function renderMemory() {
         memBusy ? ui("⏳ Обновляю записи…")
             : mem ? ui`Записи от ${when || '—'}${mem.model ? ` · ${mem.model}` : ''}${mem.index >= 0 ? ui` · учтены сообщения до #${mem.index}` : ''}`
                 : ui("Записей пока нет."),
-        mem?.stale ? ui("⚠ Сообщения, по которым составлены записи, удалены — в записях могут остаться отменённые события. Поправьте их или нажмите «Обновить».") : '',
+        mem?.stale ? ui("⚠ Требуют проверки: сообщения, по которым составлены записи, изменены или удалены — в записях могут остаться отменённые события. Поправьте их вручную или очистите и обновите.") : '',
+        mem?.skipped ? ui`При последнем обновлении не поместились и не учтены сообщений: ${mem.skipped}.` : '',
         s.memory ? '' : ui("Память выключена: записи не обновляются сами и не подмешиваются в ход."),
     ].filter(Boolean).join('\n');
 }
@@ -809,9 +1094,17 @@ function onMemoryInput(e) {
     const id0 = chatId();
     if (!meta || !id0 || memBusy) return;
     const text = e.target.value;
+    const rev = (meta.aip_memory?.rev ?? 0) + 1;
+    // ручная правка = записи проверены человеком: снимаем пометку «требуют проверки» и фиксируем
+    // отпечаток текущей истории
     if (!text.trim()) delete meta.aip_memory;
-    else if (meta.aip_memory) Object.assign(meta.aip_memory, { text, chatId: id0, updated: Date.now() });
-    else meta.aip_memory = { chatId: id0, text, upTo: -1, upToDate: null, updated: Date.now(), model: ui("вручную") };
+    else if (meta.aip_memory) {
+        const st = memoryState();
+        const idx = st?.index ?? -1;
+        Object.assign(meta.aip_memory, { text, chatId: id0, rev, review: false, updated: Date.now() });
+        if (idx >= 0) Object.assign(meta.aip_memory, { upTo: idx, upToDate: ctx().chat[idx]?.send_date ?? null, hash: historyHash(ctx().chat, idx) });
+    }
+    else meta.aip_memory = { chatId: id0, text, upTo: -1, upToDate: null, rev, updated: Date.now(), model: ui("вручную") };
     clearTimeout(memSaveTimer);
     memSaveTimer = setTimeout(() => { if (chatId() === id0) ctx().saveMetadata?.(); }, 800);
 }
@@ -869,15 +1162,31 @@ async function updateCtxMeter() {
 
 const buildReactionPrompt = (s, sync) => renderPrompt(s, sync, 'reaction');
 
-function transcript(n = 6) {
-    return (ctx().chat || []).filter(m => !m.is_system && (m.mes || '').trim()).slice(-n)
+// Последние n сообщений игры до сообщения upTo включительно (по умолчанию — до конца чата)
+function transcript(n = 6, upTo = Infinity) {
+    return (ctx().chat || []).slice(0, upTo + 1).filter(isPlayable).slice(-n)
         .map(m => `${m.is_user ? promptText("[ТЫ] ") : ''}${m.name}: ${m.mes}`).join('\n\n');
 }
 
 // ---------- Вызов модели через бэкенд ST ----------
+// Лимиты ответа для служебных запросов: у Claude 5 мышление съедает часть лимита — даём запас
+const reactionMaxTokens = p => srcOf(p).source === 'claude' ? 1500 : 600;
+const memoryMaxTokens = p => srcOf(p).source === 'claude' ? 2500 : 1000;
+
+// Разбор ответа об ошибке (бэкенд ST или плагин) в AipError
+function responseError(r, j) {
+    const e = j?.error;
+    if (e && typeof e === 'object' && e.kind) return new AipError(e.kind, e.message || `HTTP ${r.status}`, e.status ?? null);
+    const m = (typeof e === 'string' ? e : e?.message)
+        || (e === true ? ui("Ошибка бэкенда ST — подробности в консоли сервера SillyTavern") : '')
+        || j?.message || `HTTP ${r.status}`;
+    const status = r.ok ? null : r.status;
+    return new AipError(kindByMessage(m) || (status ? kindByStatus(status) : 'upstream'), m, status);
+}
+
 async function callModel(p, s, system, messages, { maxTokens, signal, stop } = {}) {
     const src = srcOf(p);
-    if (!p.model) throw new Error(ui("Не указана модель"));
+    if (!p.model) throw new AipError('bad_request', ui("Не указана модель"));
     // отменили ещё до запроса (▶ повторно / смена чата) — не отправляем платный запрос
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     const ctl = new AbortController();
@@ -890,6 +1199,28 @@ async function callModel(p, s, system, messages, { maxTokens, signal, stop } = {
         // источников openai/openrouter, а для custom передаёт тело как есть.
         const reasoning = /(^|\/)(o\d|gpt-5)/i.test(p.model);
         const noSampling = /claude-(fable|opus-5|sonnet-5|haiku-5)/i.test(p.model);
+        if (p.keyId) {
+            // хранилище плагина: ключ на сервере, привязан к типу API и адресу
+            if (!vault.checked) await probeVault();
+            if (!vault.ok) throw new AipError('no_plugin', ui("Ключ профиля хранится в плагине AI Player, но плагин не найден. Проверьте папку SillyTavern/plugins/ai-player и enableServerPlugins: true в config.yaml."));
+            const mt = maxTokens ?? num(s.maxTokens, 100, 16000, 1200);
+            const vb = {
+                keyId: p.keyId, provider: p.provider, url: p.url, model: p.model, system, messages, maxTokens: mt,
+                maxTokensField: src.source === 'custom' && reasoning ? 'max_completion_tokens' : 'max_tokens',
+            };
+            if (s.sendTemperature && !reasoning && !noSampling) vb.temperature = num(p.temperature, 0, 2, 0.9);
+            if (stop?.length && !reasoning) vb.stop = stop.slice(0, 4);
+            let r;
+            try { r = await fetch(`${VAULT}/generate`, { method: 'POST', signal: ctl.signal, headers: H(), body: JSON.stringify(vb) }); }
+            catch (e) { if (ctl.signal.aborted) throw e; throw new AipError('network', ui("Нет связи с сервером SillyTavern")); }
+            const j = await r.json().catch(() => null);
+            if (!r.ok || j?.error || !j) {
+                if (!j && (r.status === 404 || r.status === 405)) { vault.ok = false; throw new AipError('no_plugin', ui("Плагин AI Player не найден на сервере SillyTavern")); }
+                throw responseError(r, j || {});
+            }
+            return { text: String(j.text || ''), usage: j.usage ?? null, truncated: !!j.truncated };
+        }
+        if (!src.proxy && !p.secretId) throw new AipError('no_key', ui("У профиля нет своего ключа. Добавьте ключ в окне AI Player — ключ основного подключения таверны не используется."));
         const body = {
             chat_completion_source: src.source,
             model: p.model,
@@ -905,7 +1236,7 @@ async function callModel(p, s, system, messages, { maxTokens, signal, stop } = {
         }
         if (stop?.length && !reasoning) body.stop = src.source === 'custom' ? stop.slice(0, 4) : stop;   // у OpenAI максимум 4
         if (src.source === 'custom') {
-            if (!baseUrl(p)) throw new Error(ui("Не указан URL"));
+            if (!baseUrl(p)) throw new AipError('bad_request', ui("Не указан URL"));
             body.custom_url = baseUrl(p);
             if (p.secretId) body.secret_id = p.secretId;
         } else {
@@ -913,32 +1244,29 @@ async function callModel(p, s, system, messages, { maxTokens, signal, stop } = {
             body.claude_use_sysprompt = true;   // то же поле в старых версиях ST
             if (src.proxy) {
                 // как поле «Reverse Proxy» в самой ST: адрес (ST сам добавит /messages) + пароль прокси
-                if (!baseUrl(p)) throw new Error(ui("Не указан адрес реверс-прокси"));
-                if (!p.proxyPassword) throw new Error(ui("SillyTavern не отправляет запрос к Claude-прокси без пароля. Если прокси пароль не требует — впишите любой символ"));
+                if (!baseUrl(p)) throw new AipError('bad_request', ui("Не указан адрес реверс-прокси"));
+                if (!p.proxyPassword) throw new AipError('no_key', ui("SillyTavern не отправляет запрос к Claude-прокси без пароля. Если прокси пароль не требует — впишите любой символ"));
                 body.reverse_proxy = baseUrl(p).replace(/\/messages$/, '');
                 body.proxy_password = p.proxyPassword;
             } else if (p.secretId) {
                 body.secret_id = p.secretId;
             }
         }
-        const r = await fetch('/api/backends/chat-completions/generate', {
-            method: 'POST', signal: ctl.signal, headers: H(), body: JSON.stringify(body),
-        });
+        let r;
+        try {
+            r = await fetch('/api/backends/chat-completions/generate', {
+                method: 'POST', signal: ctl.signal, headers: H(), body: JSON.stringify(body),
+            });
+        } catch (e) { if (ctl.signal.aborted) throw e; throw new AipError('network', ui("Нет связи с сервером SillyTavern")); }
         const j = await r.json().catch(() => ({}));
-        if (!r.ok || j?.error) {
-            const e = j?.error;
-            const m = (typeof e === 'string' ? e : e?.message)
-                || (e === true ? ui("Ошибка бэкенда ST — подробности в консоли сервера SillyTavern") : '')
-                || j?.message || `HTTP ${r.status}`;
-            throw new Error(m);
-        }
+        if (!r.ok || j?.error) throw responseError(r, j);
         const ch = j?.choices?.[0];
         const text = ch?.message?.content
             || (Array.isArray(j?.content) ? j.content.filter(x => x.type === 'text').map(x => x.text).join('') : '')
             || '';
         return { text, usage: j?.usage ?? null, truncated: ch?.finish_reason === 'length' || j?.stop_reason === 'max_tokens' };
     } catch (e) {
-        if (ctl.signal.reason?.name === 'TimeoutError') throw new Error(ui("Превышено время ожидания ответа (3 мин)"));
+        if (ctl.signal.reason?.name === 'TimeoutError') throw new AipError('timeout', ui("Превышено время ожидания ответа (3 мин)"));
         throw e;
     } finally {
         clearTimeout(timer);
@@ -948,8 +1276,9 @@ async function callModel(p, s, system, messages, { maxTokens, signal, stop } = {
 
 async function fetchModels(p) {
     if (srcOf(p).source === 'claude') return CLAUDE_MODELS;
-    const body = { chat_completion_source: 'custom', custom_url: baseUrl(p) };
-    if (p.secretId) body.secret_id = p.secretId;
+    if (p.keyId) return (await vaultCall('/models', { keyId: p.keyId, url: p.url })).models || [];
+    if (!p.secretId) throw new AipError('no_key', ui("Сначала добавьте ключ профиля"));
+    const body = { chat_completion_source: 'custom', custom_url: baseUrl(p), secret_id: p.secretId };
     const r = await post('/api/backends/chat-completions/status', body);
     const j = await r.json().catch(() => ({}));
     if (j?.error) return [];
@@ -1002,7 +1331,7 @@ async function playTurn() {
             toastr.warning(ui("Откройте чат с персонажем или группой")); return;
         }
         if (!(await profileHasKey(p))) {
-            toastr.warning(srcOf(p).proxy ? ui("Укажите адрес и пароль реверс-прокси в окне AI Player") : ui("Сохраните API-ключ в окне AI Player"));
+            toastr.warning(srcOf(p).proxy && !p.keyId && !vault.ok ? ui("Укажите адрес и пароль реверс-прокси в окне AI Player") : ui("Сохраните API-ключ в окне AI Player"));
             openModal(); return;
         }
         if (signal.aborted) return;
@@ -1033,7 +1362,7 @@ async function playTurn() {
             return;
         }
         const msg = cleanReply(res.text, sync);
-        if (!msg) throw new Error(ui("Модель вернула пустую реплику"));
+        if (!msg) throw new AipError('empty', ui("Модель вернула пустую реплику"));
         if (res.truncated) toastr.warning(ui("Ответ обрезан по лимиту токенов — увеличьте «Макс. токенов»"));
 
         const ta = document.getElementById('send_textarea');
@@ -1058,7 +1387,7 @@ async function playTurn() {
             else toastr.info(ui("Основной API таверны не подключён — ход оставлен в поле ввода"));
         }
     } catch (e) {
-        if (e.name !== 'AbortError') { console.error('[AI Player]', e); toastr.error(`AI Player: ${short(e.message)}`); }
+        if (e.name !== 'AbortError') { console.error('[AI Player]', redact(e?.message)); toastr.error(describeError(e, 'turn'), 'AI Player'); }
     } finally {
         setBusy(false);
         abortCtl = null;
@@ -1091,29 +1420,37 @@ async function onBotMessage(id) {
     if (!pm?.is_user || !pm.extra?.aip) return;            // реагируем только на ответ на ход агента
 
     const id0 = chatId();
+    // снимок версии ответа: всё, что понадобится после ожидания, берём отсюда, а не из объекта
+    // сообщения — ST меняет его на месте при свайпе, «Продолжить» и правке
+    const snap = {
+        chatId: id0, id, swipeId: m.swipe_id ?? 0, sendDate: m.send_date ?? null, genFinished: String(m.gen_finished ?? ''),
+        mes: m.mes, bot: m.name, botModel: m.extra?.model || '?', playerModel: pm.extra.aip.model, profileId: pm.extra.aip.profileId,
+    };
     // в ключ входит время генерации: после «Перегенерировать» новый ответ приходит с тем же
     // индексом и swipe_id 0, но с новым send_date/gen_finished
-    const key = `${id0}:${id}:${m.swipe_id ?? 0}:${m.send_date ?? ''}:${m.gen_finished ?? ''}`;
+    const key = `${id0}:${id}:${snap.swipeId}:${snap.sendDate ?? ''}:${snap.genFinished}`;
     if (reacted.has(key)) return;
     reacted.add(key);
 
-    const p = findProfile(pm.extra.aip.profileId) || activeProfile();
-    if (!p?.model) return;
+    const p = findProfile(snap.profileId) || activeProfile();
+    if (!p?.model) { reacted.delete(key); return; }
     const sync = getSync();
     reactCtl?.abort();
     reactCtl = new AbortController();
     const signal = reactCtl.signal;
+    setReactionFailure(null);
     try {
         const res = await callModel(p, s, buildReactionPrompt(s, sync),
-            [{ role: 'user', content: promptText`Последние сообщения игры:\n\n${transcript(6)}\n\n[Что у тебя в голове об игре после ответа «${m.name}»?]` }],
-            // у Claude 5 мышление съедает часть лимита — даём запас, иначе текст может прийти пустым
-            { maxTokens: srcOf(p).source === 'claude' ? 1500 : 600, signal });
-        if (chatId() !== id0 || signal.aborted) return;
+            [{ role: 'user', content: promptText`Последние сообщения игры:\n\n${transcript(6, id)}\n\n[Что у тебя в голове об игре после ответа «${snap.bot}»?]` }],
+            { maxTokens: reactionMaxTokens(p), signal });
+        if (chatId() !== id0 || signal.aborted) { reacted.delete(key); return; }
+        // исходный ответ удалили, отредактировали, сменили свайп или перегенерировали — впечатление о нём уже не к месту
+        if (!sameReplyVersion(snap)) { reacted.delete(key); return; }
         const text = String(res.text || '').replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '').trim();
-        if (!text) return;
+        if (!text) throw new AipError('empty', ui("модель вернула пустое впечатление"));
         const entry = {
-            chatId: id0, mesId: id, swipeId: m.swipe_id ?? 0, sendDate: m.send_date ?? null, bot: m.name,
-            playerModel: pm.extra.aip.model, botModel: m.extra?.model || '?', text, ts: Date.now(),
+            chatId: snap.chatId, mesId: snap.id, swipeId: snap.swipeId, sendDate: snap.sendDate, bot: snap.bot,
+            playerModel: snap.playerModel, botModel: snap.botModel, text, ts: Date.now(),
         };
         const meta = ctx().chatMetadata;
         if (meta) {
@@ -1122,11 +1459,43 @@ async function onBotMessage(id) {
         }
         appendThought(entry);
     } catch (e) {
-        reacted.delete(key);                          // неудачную реакцию можно получить повторно (свайпом/перегенерацией)
+        reacted.delete(key);                          // неудачную реакцию можно получить повторно
         if (e.name === 'AbortError') return;
-        console.warn(ui("[AI Player] вывод не получен:"), e);
-        toastr.warning(ui`AI Player: впечатление не получено — ${short(e.message)}`);
+        console.warn('[AI Player]', redact(e?.message));
+        const msg = describeError(e, 'reaction');
+        setReactionFailure({ ...snap, message: msg });
+        toastr.warning(msg + ui(" Нажмите, чтобы повторить."), 'AI Player', { timeOut: 10000, onclick: retryReaction });
     }
+}
+
+// Тот же ли это ответ бота, что был при запуске запроса
+function sameReplyVersion(snap) {
+    if (chatId() !== snap.chatId) return false;
+    const m = ctx().chat?.[snap.id];
+    return !!m && !m.is_user && !m.is_system && (m.swipe_id ?? 0) === snap.swipeId
+        && (m.send_date ?? null) === snap.sendDate && m.mes === snap.mes;
+}
+
+// Последнее неудачное впечатление — для ручного повтора без повторного хода и ответа бота
+let reactionFailure = null;
+function setReactionFailure(f) {
+    reactionFailure = f;
+    const panel = document.getElementById('aip_thoughts');
+    if (!panel) return;
+    panel.classList.toggle('aip-has-failed', !!f);
+    const t = panel.querySelector('.aip-th-failtext');
+    if (t) t.textContent = f?.message || '';
+}
+function retryReaction() {
+    const f = reactionFailure;
+    if (!f) return;
+    if (!sameReplyVersion(f)) {
+        setReactionFailure(null);
+        toastr.info(ui("Ответ бота изменился или удалён — повторять нечего"), 'AI Player');
+        return;
+    }
+    if (!settings().s.reactions) setReactions(true);
+    onBotMessage(f.id);
 }
 
 // ---------- Окно мыслей ----------
@@ -1280,7 +1649,7 @@ function clampIntoView(el) {
 function buildThoughts() {
     const el = document.createElement('div');
     el.id = 'aip_thoughts';
-    el.innerHTML = `<div class="aip-th-head"><div class="aip-th-title"><i class="fa-solid fa-comment-dots"></i><b>${ui("Впечатления игрока")}</b><span class="aip-th-count"></span></div><span class="aip-th-btns"><a class="aip-icon aip-power" data-act="power" title=""><i class="fa-solid fa-power-off"></i></a><a class="aip-icon" data-act="min" title="${ui("Свернуть / развернуть")}"><i class="fa-solid fa-minus"></i></a><a class="aip-icon" data-act="clear" title="${ui("Очистить впечатления этого чата")}"><i class="fa-solid fa-trash-can"></i></a><a class="aip-icon" data-act="close" title="${ui("Скрыть")}"><i class="fa-solid fa-xmark"></i></a></span></div><div class="aip-th-off"><i class="fa-solid fa-power-off"></i> ${ui("Впечатления выключены — новые не запрашиваются.")} <a data-act="on">${ui("Включить")}</a></div><div class="aip-th-body"></div><button type="button" class="aip-th-newbtn" data-act="tonew"><i class="fa-solid fa-arrow-down"></i> ${ui("Новое впечатление")}</button><div class="aip-th-empty">${ui("Впечатления игрока об игре появятся здесь, когда бот ответит на ход агента.")}<br><small>${ui("Это слова игрока, а не персонажа. В чат не попадают.")}</small></div>`;
+    el.innerHTML = `<div class="aip-th-head"><div class="aip-th-title"><i class="fa-solid fa-comment-dots"></i><b>${ui("Впечатления игрока")}</b><span class="aip-th-count"></span></div><span class="aip-th-btns"><a class="aip-icon aip-power" data-act="power" title=""><i class="fa-solid fa-power-off"></i></a><a class="aip-icon" data-act="min" title="${ui("Свернуть / развернуть")}"><i class="fa-solid fa-minus"></i></a><a class="aip-icon" data-act="clear" title="${ui("Очистить впечатления этого чата")}"><i class="fa-solid fa-trash-can"></i></a><a class="aip-icon" data-act="close" title="${ui("Скрыть")}"><i class="fa-solid fa-xmark"></i></a></span></div><div class="aip-th-off"><i class="fa-solid fa-power-off"></i> ${ui("Впечатления выключены — новые не запрашиваются.")} <a data-act="on">${ui("Включить")}</a></div><div class="aip-th-fail"><i class="fa-solid fa-triangle-exclamation"></i> <span class="aip-th-failtext"></span> <a data-act="retry">${ui("Повторить")}</a></div><div class="aip-th-body"></div><button type="button" class="aip-th-newbtn" data-act="tonew"><i class="fa-solid fa-arrow-down"></i> ${ui("Новое впечатление")}</button><div class="aip-th-empty">${ui("Впечатления игрока об игре появятся здесь, когда бот ответит на ход агента.")}<br><small>${ui("Это слова игрока, а не персонажа. В чат не попадают.")}</small></div>`;
     uiHost().appendChild(el);
     el.classList.toggle('aip-min', !!settings().s.thoughtsMin);
     el.querySelector('[data-act="power"]').onclick = () => {
@@ -1288,6 +1657,7 @@ function buildThoughts() {
         toastr.info(settings().s.reactions ? ui("Впечатления игрока включены") : ui("Впечатления игрока выключены — лишних запросов не будет"), 'AI Player', { timeOut: 2500 });
     };
     el.querySelector('[data-act="on"]').onclick = () => setReactions(true);
+    el.querySelector('[data-act="retry"]').onclick = retryReaction;
     el.querySelector('[data-act="tonew"]').onclick = scrollThoughtsToEnd;
     const thBody = el.querySelector('.aip-th-body');
     thBody.addEventListener('scroll', () => { if (thoughtsAtBottom(thBody)) el.classList.remove('aip-has-new'); }, { passive: true });
@@ -1448,8 +1818,9 @@ function buildModal() {
               <input id="aip_p_proxyPassword" type="password" autocomplete="new-password" placeholder="${ui("обязателен для ST; если прокси без пароля — любой символ")}">
               <div class="aip-note">${ui("🔐 Пароль хранится в настройках расширения — в")} <code>settings.json</code> ${ui("SillyTavern на сервере таверны (там же, где ST хранит свой пароль прокси) и загружается в браузер вместе с настройками. При запросе он идёт через сервер ST только на указанный реверс-прокси. Не передавайте никому")} <code>settings.json</code> ${ui("и бэкапы папки")} <code>data</code>.</div>
             </div>
+            <div class="aip-note aip-store" id="aip_storeMode" data-mode="unknown"></div>
             <div id="aip_keyWrap">
-            <label>${ui("Ключ")}</label>
+            <label id="aip_keyLabelText">${ui("Ключ")}</label>
             <div class="aip-row"><select id="aip_keySelect" title="${ui("Какой ключ использует этот профиль")}"></select><button type="button" class="menu_button aip-sq" id="aip_keyDel" title="${ui("Удалить выбранный ключ из хранилища")}"><i class="fa-solid fa-trash-can"></i></button></div>
             <details class="aip-addkey" id="aip_addKey">
               <summary><i class="fa-solid fa-plus"></i> ${ui("Добавить ключ")}</summary>
@@ -1460,6 +1831,10 @@ function buildModal() {
               </div>
             </details>
             <div class="aip-note" id="aip_keyState">…</div>
+            <div class="aip-actions">
+              <button type="button" class="menu_button aip-hidden" id="aip_keyMigrate"><i class="fa-solid fa-right-left"></i> ${ui("Перенести в хранилище AI Player")}</button>
+              <button type="button" class="menu_button aip-hidden" id="aip_legacyClean"><i class="fa-solid fa-broom"></i> ${ui("Удалить старые общие копии")}</button>
+            </div>
             </div>
           </div>
 
@@ -1593,13 +1968,19 @@ function buildModal() {
         const { s, save } = settings();
         if (s.profiles.length < 2) { toastr.warning(ui("Нельзя удалить единственный профиль")); return; }
         const p = activeProfile();
-        // ключ удаляем, только если он больше ни в одном профиле не выбран
-        const shared = p.secretId && s.profiles.some(x => x !== p && x.secretId === p.secretId);
-        const dropKey = p.secretId && !shared;
+        // ключ удаляем, только если он больше ни в одном профиле не выбран; ключ основного
+        // подключения таверны (не выбранный в профиле) не трогаем никогда
+        const ref = p.keyId ? 'keyId' : p.secretId ? 'secretId' : null;
+        const shared = !!ref && s.profiles.some(x => x !== p && x[ref] === p[ref]);
+        const dropKey = !!ref && !shared;
         if (!confirm(ui`Удалить профиль «${p.name}»${dropKey ? ui(" и его ключ") : ''}?${shared ? ui(" Ключ останется — он выбран в других профилях.") : ''}`)) return;
         if (dropKey) {
-            const r = await post('/api/secrets/delete', { key: srcOf(p).secret, id: p.secretId }).catch(() => null);
-            if (!r?.ok) toastr.warning(ui("Профиль удалён, но ключ удалить не удалось — удалите его из списка ключей вручную"));
+            let ok = false;
+            try {
+                if (ref === 'keyId') { await vaultCall('/keys/delete', { id: p.keyId }); ok = true; }
+                else ok = !!(await post('/api/secrets/delete', { key: srcOf(p).secret, id: p.secretId }).catch(() => null))?.ok;
+            } catch { ok = false; }
+            if (!ok) toastr.warning(ui("Профиль удалён, но ключ удалить не удалось — удалите его из списка ключей вручную"));
         }
         s.profiles = s.profiles.filter(x => x.id !== p.id);
         s.activeProfile = s.profiles[0].id; save(); fillModal();
@@ -1617,6 +1998,7 @@ function buildModal() {
             if (f === 'provider' && prev !== p.provider) {
                 if (!p.url || p.url === SOURCE[prev]?.defUrl) p.url = srcOf(p).defUrl;
                 p.secretId = null;   // ключ другого провайдера не подходит
+                p.keyId = null;
                 fillModal();
             }
             settings().save();
@@ -1691,22 +2073,36 @@ function buildModal() {
             if (await saveProfileKey(activeProfile(), val, lab.value.trim())) {
                 inp.value = ''; lab.value = '';
                 $('#aip_addKey').open = false;
-                toastr.success(ui("Ключ добавлен в хранилище SillyTavern и выбран в профиле"));
+                toastr.success(vault.ok ? ui("Ключ сохранён в хранилище AI Player и выбран в профиле. Менеджер ключей таверны не изменился.") : ui("Ключ добавлен в общее хранилище SillyTavern и выбран в профиле"));
             }
-        } catch (e) { toastr.error(short(e.message)); }
+        } catch (e) { toastr.error(describeError(e, 'keys')); }
         refreshKeyState();
     };
     $('#aip_keySelect').addEventListener('change', e => {
         const p = activeProfile();
-        if (e.target.value === '__none') { $('#aip_addKey').open = true; return; }
-        p.secretId = e.target.value || null;
+        const v = e.target.value;
+        if (v === '__none') { $('#aip_addKey').open = true; return; }
+        if (v === '__legacy') return;
+        if (vault.ok) { p.keyId = v || null; if (v) p.secretId = null; }
+        else p.secretId = v || null;
         settings().save();
         refreshKeyState();
         scheduleMeter();
     });
     $('#aip_keyDel').onclick = async () => {
-        if ($('#aip_keySelect').value === '__none') { toastr.info(ui("Удалять нечего — ключей расширения нет")); return; }
-        try { await deleteProfileKey(activeProfile()); } catch (e) { toastr.error(short(e.message)); }
+        const p = activeProfile();
+        if (!p.keyId && !p.secretId) { toastr.info(ui("В профиле не выбран ключ — удалять нечего")); return; }
+        try { await deleteProfileKey(p); } catch (e) { toastr.error(describeError(e, 'keys')); }
+        refreshKeyState();
+    };
+    $('#aip_keyMigrate').onclick = async () => {
+        try {
+            if (await migrateProfileKey(activeProfile())) toastr.success(ui("Ключ перенесён в хранилище AI Player. Старая общая копия пока осталась в менеджере ключей таверны — удалите её кнопкой «Удалить старые общие копии», когда перенесёте все профили."), 'AI Player', { timeOut: 9000 });
+        } catch (e) { toastr.error(describeError(e, 'keys')); }
+        refreshKeyState();
+    };
+    $('#aip_legacyClean').onclick = async () => {
+        try { await cleanLegacyCopies(); } catch (e) { toastr.error(describeError(e, 'keys')); }
         refreshKeyState();
     };
     // модели
@@ -1715,7 +2111,7 @@ function buildModal() {
             const ids = await fetchModels(activeProfile());
             $('#aip_models').replaceChildren(...ids.map(id => Object.assign(document.createElement('option'), { value: id })));
             toastr.info(ids.length ? ui`Моделей: ${ids.length} — выберите в поле «Модель»` : ui("Список не получен — впишите ID вручную"));
-        } catch (e) { toastr.error(short(e.message)); }
+        } catch (e) { toastr.error(describeError(e, 'models')); }
     };
     // действия
     $('#aip_test').onclick = async () => {
@@ -1724,12 +2120,12 @@ function buildModal() {
         st.className = 'aip-status'; st.textContent = ui("Проверка…");
         try {
             const p = activeProfile();
-            if (!(await profileHasKey(p))) throw new Error(ui("Ключ не сохранён"));
+            if (!(await profileHasKey(p))) throw new AipError('no_key', ui("Ключ не сохранён"));
             // 256, а не 30: reasoning-модели и Claude 5 с мышлением на малом лимите отвечают пусто
             const r = await callModel(p, settings().s, promptText("Отвечай одним словом."), [{ role: 'user', content: promptText("Скажи: готов") }], { maxTokens: srcOf(p).source === 'claude' ? 1024 : 256 });
             st.textContent = ui`✔ Соединение есть (${p.model}). Ответ: ${r.text.trim() || ui("(пусто)")}`;
             st.classList.add('aip-ok');
-        } catch (e) { st.textContent = `✖ ${short(e.message)}`; st.classList.add('aip-err'); }
+        } catch (e) { st.textContent = `✖ ${describeError(e, 'test')}`; st.classList.add('aip-err'); }
     };
     $('#aip_resync').onclick = refreshSync;
     $('#aip_play_modal').onclick = () => { closeModal(); playTurn(); };
@@ -1777,8 +2173,7 @@ function fillModal() {
     document.getElementById('aip_urlLabel').textContent = src.proxy
         ? ui("Адрес реверс-прокси — как в поле Reverse Proxy в ST (обычно оканчивается на /v1; ST сам добавит /messages)") : ui("URL — база API или адрес реверс-прокси");
     document.getElementById('aip_p_url').placeholder = src.proxy ? ui("https://адрес-прокси/…/v1") : 'https://api.openai.com/v1';
-    document.getElementById('aip_proxyWrap').style.display = src.proxy ? '' : 'none';
-    document.getElementById('aip_keyWrap').style.display = src.proxy ? 'none' : '';
+    applyKeyLayout(p);
     document.getElementById('aip_models').replaceChildren(
         ...(srcOf(p).source === 'claude' ? CLAUDE_MODELS : []).map(id => Object.assign(document.createElement('option'), { value: id })));
     for (const f of GLOBAL_FIELDS) document.getElementById(`aip_${f}`).value = s[f] ?? '';
@@ -1805,53 +2200,101 @@ function updatePromptState() {
         : ui("Стандартный промпт. Начните править — сохранится как свой.");
 }
 
-async function refreshKeyState() {
-    const p = activeProfile();
-    if (srcOf(p).proxy) {                         // реверс-прокси Claude: ключей нет, только пароль прокси
-        updateChip(p.url && p.proxyPassword ? 'ok' : 'none');
+// Какие поля ключа показывать: с плагином пароль прокси тоже хранится как ключ в плагине
+function applyKeyLayout(p) {
+    const proxy = srcOf(p).proxy;
+    const plainProxy = proxy && !vault.ok;         // общий режим: пароль прокси — поле профиля
+    document.getElementById('aip_proxyWrap').style.display = plainProxy ? '' : 'none';
+    document.getElementById('aip_keyWrap').style.display = plainProxy ? 'none' : '';
+    document.getElementById('aip_keyLabelText').textContent = proxy ? ui("Пароль прокси") : ui("Ключ");
+    const box = document.getElementById('aip_storeMode');
+    box.dataset.mode = !vault.checked ? 'unknown' : vault.ok ? 'vault' : 'legacy';
+    if (!vault.checked) { box.textContent = ''; return; }
+    if (vault.ok) {
+        box.textContent = ui`🔒 Плагин AI Player ${vault.version || ''} установлен: ключи и пароли прокси хранятся отдельно от ключей таверны (data/<пользователь>/ai-player/keys.json на сервере), в менеджере ключей таверны не появляются, в браузер не передаются. Каждый ключ привязан к типу API и адресу, с которым его сохранили.`;
         return;
     }
+    box.replaceChildren(
+        document.createTextNode(ui("⚠ Плагин AI Player не установлен. Ключи хранятся в общем хранилище SillyTavern (secrets.json) и видны в менеджере ключей основного подключения. Для полной изоляции установите серверный плагин и перезапустите таверну:")),
+        Object.assign(document.createElement('br')),
+        Object.assign(document.createElement('code'), { textContent: 'cp -r data/default-user/extensions/SillyTavern-AI-Player/server-plugin plugins/ai-player' }),
+        Object.assign(document.createElement('br')),
+        document.createTextNode(ui("и в config.yaml: ")),
+        Object.assign(document.createElement('code'), { textContent: 'enableServerPlugins: true' }),
+    );
+}
+
+async function refreshKeyState() {
+    const p = activeProfile();
     const prov = p.provider;
     const el = document.getElementById('aip_keyState');
     const sel = document.getElementById('aip_keySelect');
-    let legacy = false, list = [], failed = false;
-    try {
-        list = slotList(await secretState(), srcOf(p).secret);
-    } catch { failed = true; }
-    // пока ждали, переключили профиль или тип API — не рисуем чужие ключи
+    if (!vault.checked) await probeVault();
     if (activeProfile() !== p || p.provider !== prov) return;
-    // таверна реально отдаст непустой ключ: активен её собственный (не заглушка и не ключ расширения)
-    const act = list.find(x => x.active);
-    const tavern = !!act && !isAipKey(act) && act.label !== PLACEHOLDER_LABEL;
-    if (!failed) {
-        legacy = list.some(x => x.legacy);
-        // ключ точно удалён (хранилище ответило нормально, а ключа нет) — сбрасываем выбор
-        if (p.secretId && !list.some(x => x.id === p.secretId)) { p.secretId = null; settings().save(); }
-        // без secret_id ST возьмёт активный ключ; если у таверны его нет — привязываем первый ключ расширения явно
-        if (!p.secretId && !tavern) { const k = list.find(x => x.id && isAipKey(x)); if (k) { p.secretId = k.id; settings().save(); } }
+    applyKeyLayout(p);
+    const migrateBtn = document.getElementById('aip_keyMigrate');
+    const cleanBtn = document.getElementById('aip_legacyClean');
+    migrateBtn.classList.toggle('aip-hidden', !needsMigration(p));
+    cleanBtn.classList.toggle('aip-hidden', !vault.ok);
+    if (srcOf(p).proxy && !vault.ok) {            // общий режим: у прокси нет ключей, только пароль в профиле
+        updateChip(p.url && p.proxyPassword ? 'ok' : 'none');
+        return;
     }
-    const has = !!p.secretId || tavern;
-    // значения приходят от ST замаскированными (*******abc) — в списке только последние символы
     const opt = (value, text) => Object.assign(document.createElement('option'), { value, textContent: text });
-    const tail = x => { const t = String(x.value || '').replace(/\*/g, ''); return t ? ` · …${t.slice(-3)}` : ''; };
-    // показываем только ключи, добавленные через расширение (+ выбранный, если он вдруг чужой)
-    const mine = list.filter(x => x.id && (isAipKey(x) || x.id === p.secretId));
-    const items = mine.map(x => opt(x.id, `🔑 ${keyName(x)}${tail(x)}`));
-    if (!items.length && !tavern) items.push(opt('__none', ui("— ключей расширения нет, добавьте ниже —")));
-    if (tavern) items.push(opt('', ui("↪ Ключ, активный в панели API таверны")));
-    sel.replaceChildren(...items);
-    sel.value = p.secretId || (tavern ? '' : '__none');
+    let failed = false, legacy = false, items = [], has = false, count = 0, mismatch = false;
+    if (vault.ok) {
+        let list = [];
+        try { list = await vaultKeys(p.provider); } catch { failed = true; }
+        if (activeProfile() !== p || p.provider !== prov) return;
+        // ключ точно удалён (плагин ответил нормально, а ключа нет) — сбрасываем выбор
+        if (!failed && p.keyId && !list.some(k => k.id === p.keyId)) { p.keyId = null; settings().save(); }
+        const base = vaultBase(p);
+        items = list.map(k => opt(k.id, `🔑 ${k.label} · ${k.mask}${k.base !== base ? ui(" · ⚠ другой адрес") : ''}`));
+        mismatch = !!p.keyId && list.find(k => k.id === p.keyId)?.base !== base;
+        count = list.length;
+        has = !!p.keyId;
+        if (!p.keyId && p.secretId) items.unshift(opt('__legacy', ui("↪ Старый общий ключ (не перенесён)")));
+        else if (!p.keyId && list.length) items.unshift(opt('', ui("— выберите ключ —")));
+        if (!list.length && !p.secretId) items.push(opt('__none', ui("— ключей нет, добавьте ниже —")));
+        sel.replaceChildren(...items);
+        sel.value = p.keyId || (p.secretId ? '__legacy' : list.length ? '' : '__none');
+        if (!list.length && !failed) document.getElementById('aip_addKey').open = true;
+    } else {
+        let list = [];
+        try { list = slotList(await secretState(), srcOf(p).secret); } catch { failed = true; }
+        if (activeProfile() !== p || p.provider !== prov) return;
+        if (!failed) {
+            legacy = list.some(x => x.legacy);
+            if (p.secretId && !list.some(x => x.id === p.secretId)) { p.secretId = null; settings().save(); }
+        }
+        // значения приходят от ST замаскированными (*******abc) — в списке только последние символы
+        const tail = x => { const t = String(x.value || '').replace(/\*/g, ''); return t ? ` · …${t.slice(-3)}` : ''; };
+        // показываем только ключи, добавленные через расширение (+ выбранный, если он вдруг чужой)
+        const mine = list.filter(x => x.id && (isAipKey(x) || x.id === p.secretId));
+        items = mine.map(x => opt(x.id, `🔑 ${keyName(x)}${tail(x)}`));
+        if (!p.secretId && mine.length) items.unshift(opt('', ui("— выберите ключ —")));
+        if (!mine.length) items.push(opt('__none', ui("— ключей расширения нет, добавьте ниже —")));
+        sel.replaceChildren(...items);
+        sel.value = p.secretId || (mine.length ? '' : '__none');
+        if (!mine.length && !failed) document.getElementById('aip_addKey').open = true;
+        count = mine.length;
+        has = !!p.secretId;
+    }
     sel.disabled = legacy || failed;
-    if (!mine.length && !failed) document.getElementById('aip_addKey').open = true;
-    updateChip(failed || !has ? 'none' : p.secretId ? 'ok' : 'shared');
-    el.dataset.state = failed || !has ? 'none' : p.secretId ? 'ok' : 'shared';
+    const state = failed || !has ? 'none' : 'ok';
+    updateChip(state);
+    el.dataset.state = state;
     el.textContent = failed
-        ? ui("⚠ Не удалось прочитать хранилище ключей SillyTavern. Выбор ключа сохранён; попробуйте открыть окно ещё раз.")
-        : p.secretId
-            ? ui`🔒 Выбран ключ расширения (всего ключей расширения: ${mine.length}). Ключи хранятся в secrets.json на сервере SillyTavern (там, где запущена таверна); в браузер приходит только маска с последними символами (если в config.yaml не включён allowKeysExposure). Ключи из панели API таверны здесь не показываются.`
-            : has
-                ? ui`↪ Используется ключ, активный в панели API таверны (${srcOf(p).label}).${legacy ? ui(" Эта версия ST хранит один ключ на провайдера.") : ui(" Чтобы не путаться, добавьте отдельный ключ расширения.")}`
-                : ui("⚠ Ключа нет — нажмите «Добавить ключ».");
+        ? (vault.ok ? ui("⚠ Не удалось прочитать хранилище плагина AI Player. Выбор ключа сохранён; попробуйте открыть окно ещё раз.")
+            : ui("⚠ Не удалось прочитать хранилище ключей SillyTavern. Выбор ключа сохранён; попробуйте открыть окно ещё раз."))
+        : needsMigration(p)
+            ? ui("↪ Профиль пока использует старый ключ из общего хранилища SillyTavern — он виден в менеджере ключей таверны. Нажмите «Перенести в хранилище AI Player»: плагин скопирует ключ на сервере, в браузер он не попадёт. Общая копия останется, пока вы её не удалите.")
+            : mismatch
+                ? ui("⚠ Выбранный ключ сохранён для другого адреса API. Плагин не отправит его на новый адрес — добавьте ключ для этого адреса.")
+                : has
+                    ? (vault.ok ? ui`🔒 Выбран ключ из хранилища AI Player (ключей этого типа: ${count}).`
+                        : ui`🔑 Выбран ключ расширения (всего ключей расширения: ${count}). Он хранится в общем secrets.json SillyTavern на сервере и виден в менеджере ключей таверны; в браузер приходит только маска (если в config.yaml не включён allowKeysExposure).`)
+                    : ui("⚠ У профиля нет своего ключа — выберите или добавьте ключ. Ключ основного подключения таверны AI Player не использует.");
 }
 
 async function refreshSync() {
@@ -1877,6 +2320,7 @@ function openModal() {
     }
     // окно показываем всегда; ошибки заполнения — уведомлением, а не молчаливым отказом
     o.classList.add('aip-open');
+    vault.checked = false;           // плагин могли установить или убрать — проверяем заново
     const step = (name, fn) => {
         try { fn(); } catch (e) {
             console.error(`[AI Player] ${name}`, e);
@@ -1908,6 +2352,7 @@ function diagnose() {
     const lines = [`AI Player ${VERSION} · ${navigator.userAgent.match(/(Chrome|Firefox|Safari)\/[\d.]+/)?.[0] || navigator.userAgent.slice(0, 60)}`];
     const css = getComputedStyle(document.documentElement).getPropertyValue('--aip-dur').trim();
     lines.push(ui`style.css загружен: ${css ? ui("да") : ui("НЕТ")}`);
+    lines.push(ui`плагин ключей: ${!vault.checked ? '?' : vault.ok ? `${ui("да")} ${vault.version || ''}` : ui("НЕТ")}`);
     const probe = id => {
         const n = document.getElementById(id);
         if (!n) return ui`${id}: НЕТ в DOM`;
@@ -1924,7 +2369,7 @@ function diagnose() {
     if (o && !wasOpen) o.classList.remove('aip-open');
     lines.push(probe('aip_thoughts'));
     lines.push(ui`окно ${innerWidth}×${innerHeight} · чат: ${chatId() ? ui("открыт") : ui("нет")} · ошибок: ${errors.length}`);
-    for (const e of errors.slice(-3)) lines.push(ui`ошибка: ${e}`);
+    for (const e of errors.slice(-3)) lines.push(ui`ошибка: ${redact(e)}`);
     const text = lines.join('\n');
     console.log(ui("[AI Player] диагностика\n") + text);
     const ta = document.getElementById('send_textarea');
@@ -1935,7 +2380,7 @@ function diagnose() {
 // перехват ошибок расширения — показываем уведомлением, т.к. на телефоне консоли не видно
 const errors = [];
 function reportError(err, where = '') {
-    const msg = `${where ? where + ': ' : ''}${err?.message || err}`;
+    const msg = redact(`${where ? where + ': ' : ''}${err?.message || err}`);
     errors.push(msg);
     console.error('[AI Player]', where, err);
     toastr.error(short(msg), ui("AI Player — ошибка"));
@@ -1979,6 +2424,7 @@ jQuery(() => { try { initAll(); } catch (e) { reportError(e, ui("запуск"))
 
 function initAll() {
     settings();
+    probeVault();                 // в фоне: есть ли серверный плагин ключей
     applyMotion();
     buildModal();
     buildThoughts();
@@ -1990,6 +2436,7 @@ function initAll() {
         abortCtl?.abort();
         reactCtl?.abort();
         memCtl?.abort();
+        setReactionFailure(null);
         pendingMeta = null;
         reacted.clear();
         renderThoughts();

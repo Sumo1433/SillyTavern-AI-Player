@@ -245,6 +245,19 @@
 #aip_thoughts.aip-min .aip-th-off { display: none; }
 #aip_thoughts.aip-off .aip-th-title i { color: var(--aip-muted); }
 
+/* неудачное впечатление: причина и ручной повтор */
+.aip-th-fail { display: none; padding: 7px 12px; font-size: .8em; line-height: 1.4; color: var(--aip-text, inherit); background: var(--aip-surface); border-bottom: 1px solid var(--aip-border); overflow-wrap: anywhere; }
+.aip-th-fail i { color: #d9822b; }
+.aip-th-fail a { color: var(--aip-accent); cursor: pointer; text-decoration: underline; white-space: nowrap; }
+#aip_thoughts.aip-has-failed .aip-th-fail { display: block; }
+#aip_thoughts.aip-min .aip-th-fail { display: none; }
+
+/* режим хранения ключей и кнопки перехода */
+.aip-store { margin: 0 0 8px; }
+.aip-store[data-mode="legacy"] { border-left: 3px solid #d9822b; padding-left: 8px; }
+.aip-store[data-mode="vault"] { border-left: 3px solid var(--aip-accent); padding-left: 8px; }
+.aip-store code { user-select: all; }
+
 /* кнопка «↓ Новая мысль», когда пользователь листает старые */
 .aip-th-newbtn {
   all: unset; box-sizing: border-box; cursor: pointer;
