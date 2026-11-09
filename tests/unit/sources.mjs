@@ -12,7 +12,7 @@ const SRC_DIR = path.join(ROOT, 'src');
 // порядок склейки: сначала то, что вычисляется при загрузке модуля (словарь, константы),
 // потом остальное; index.js — точка входа — последним
 export const MODULE_ORDER = [
-    'i18n-en.js', 'i18n.js', 'core.js', 'errors.js', 'prompts-en.js', 'prompts.js', 'keys.js', 'api.js',
+    'i18n-en.js', 'i18n.js', 'core.js', 'errors.js', 'prompts-en.js', 'migrations.js', 'prompts.js', 'keys.js', 'api.js',
     'context.js', 'memory.js', 'reactions.js', 'turn.js', 'export.js', 'ui-thoughts.js', 'ui-modal.js', 'diagnostics.js',
 ];
 

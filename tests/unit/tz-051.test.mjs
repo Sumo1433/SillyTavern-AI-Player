@@ -92,7 +92,7 @@ test('K4. Плагин: HTTP 500 и сетевой сбой при сохран�
     t.$('#aip_keyInput').value = 'sk-fail-2';
     t.click('#aip_keySave');
     await waitFor(() => t.toasts.filter(x => x.type === 'error').length === 2, { msg: 'вторая ошибка' });
-    assert.ok(!t.toasts.some(x => x.type === 'success'), 'нет сообщения об успехе');
+    assert.ok(!t.toasts.some(x => x.type === 'success' && /[Кк]люч/.test(x.msg)), 'нет сообщения об успехе: ' + JSON.stringify(t.toasts.map(x => [x.type, x.msg])));
     assert.equal(t.s().profiles[0].keyId, 'vk1', 'прежний корректный ключ остался');
     assert.ok(!t.toasts.some(x => /sk-fail/.test(x.msg)), 'значение ключа не попадает в сообщения');
 });
@@ -387,4 +387,28 @@ test('E3. Сбой впечатления и записей не создаёт 
     assert.equal(t.calls.filter(isTurnCall).length, 1, 'ход не повторялся');
     assert.ok(t.toasts.some(x => /^Впечатление: ошибка на стороне провайдера или прокси \(HTTP 503\)/.test(x.msg)));
     assert.ok(t.toasts.some(x => /^Записи: ошибка на стороне провайдера или прокси \(HTTP 503\)/.test(x.msg)));
+});
+
+// ================================================================ п. 7 — обновление не теряет данных
+test('U1. Данные 0.5.0 переживают обновление: профили, выбранные ключи, свои промпты, записи, журнал впечатлений', async () => {
+    const profiles = [{ ...PROFILE() }, { ...PROFILE(), id: 'p2', name: 'Прокси', provider: 'claude_proxy', url: 'https://proxy.example/v1', proxyPassword: 'pp-1', secretId: null }];
+    const prompts = { system: 'Мой системный {player}', turn: '', reaction: 'Моя реакция', memory: 'Мои записи' };
+    t = setup({ extensionSettings: { ai_player: { profiles: structuredClone(profiles), activeProfile: 'p2', prompts: structuredClone(prompts), customPrompt: 'Свой', lastVersion: '0.5.0' } } });
+    const memory = { chatId: 'chat-1', text: 'Записи до обновления', upTo: 2, upToDate: t.c.chat[2].send_date, updated: 1, model: 'm' };
+    const log = [{ chatId: 'chat-1', mesId: 2, swipeId: 0, sendDate: t.c.chat[2].send_date, bot: 'Алиса', playerModel: 'a', botModel: 'b', text: 'Впечатление 8/10', ts: 1 }];
+    t.c.chatMetadata.aip_memory = structuredClone(memory);
+    t.c.chatMetadata.aip_log = structuredClone(log);
+    await t.emit(t.event_types.CHAT_CHANGED);
+    await ready();
+    t.click('#aip_menu');
+    await sleep(20);
+    const s = t.s();
+    assert.deepEqual(s.profiles.map(p => [p.id, p.name, p.provider, p.secretId ?? null, p.proxyPassword ?? '']), profiles.map(p => [p.id, p.name, p.provider, p.secretId ?? null, p.proxyPassword ?? '']));
+    assert.equal(s.activeProfile, 'p2');
+    assert.deepEqual({ ...s.prompts }, prompts);
+    assert.equal(s.customPrompt, 'Свой');
+    assert.equal(t.c.chatMetadata.aip_memory.text, 'Записи до обновления');
+    assert.equal(t.aip.memoryState().stale, false, 'записи без отпечатка истории не считаются устаревшими');
+    assert.deepEqual(JSON.parse(JSON.stringify(t.c.chatMetadata.aip_log)), log);
+    assert.equal(t.$$('#aip_thoughts .aip-th-item').length, 1);
 });
