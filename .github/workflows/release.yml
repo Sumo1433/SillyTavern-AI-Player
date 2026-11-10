@@ -6,6 +6,7 @@ name: Release
 #     the tag is taken from "version" in manifest.json.
 # Notes come from docs/releases/<tag>.md if that file exists,
 # otherwise GitHub generates them from the commit list.
+# Re-running for an existing release refreshes its notes from that file.
 
 on:
   push:
@@ -31,11 +32,16 @@ jobs:
           else
             TAG="v$(jq -r .version manifest.json)"
           fi
+          NOTES="docs/releases/${TAG}.md"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists, nothing to do."
+            if [ -f "$NOTES" ]; then
+              gh release edit "$TAG" --notes-file "$NOTES"
+              echo "Release $TAG already exists, notes updated."
+            else
+              echo "Release $TAG already exists, nothing to do."
+            fi
             exit 0
           fi
-          NOTES="docs/releases/${TAG}.md"
           if [ -f "$NOTES" ]; then
             gh release create "$TAG" --target "$GITHUB_SHA" --title "AI Player ${TAG#v}" --notes-file "$NOTES" --latest
           else
