@@ -1,0 +1,31 @@
+name: Release
+
+# Push a tag like v0.5.4 and this publishes a GitHub release.
+# Notes are taken from docs/releases/<tag>.md if that file exists,
+# otherwise GitHub generates them from the commit list.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          NOTES="docs/releases/${TAG}.md"
+          if [ -f "$NOTES" ]; then
+            gh release create "$TAG" --title "AI Player ${TAG#v}" --notes-file "$NOTES" --latest
+          else
+            gh release create "$TAG" --title "AI Player ${TAG#v}" --generate-notes --latest
+          fi
